@@ -1,0 +1,38 @@
+{
+	"schemaVersion": 1,
+	"id": "chess",
+	"version": "${version}",
+	"name": "Chess",
+	"description": "Chess mod for Minecraft 1.20.1",
+	"authors": [
+		"Denis"
+	],
+	"license": "CC0-1.0",
+	"icon": "assets/chess/icon.png",
+
+	"environment": "*",
+
+	"entrypoints": {
+		"main": [
+			"com.chess.ExampleMod"
+		],
+		"client": [
+			"com.chess.client.ExampleModClient"
+		]
+	},
+
+	"mixins": [
+		"modid.mixins.json",
+		{
+			"config": "modid.client.mixins.json",
+			"environment": "client"
+		}
+	],
+
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~1.20.1",
+		"java": ">=17",
+		"fabric-api": "*"
+	}
+}

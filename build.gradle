@@ -1,0 +1,83 @@
+plugins {
+	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+	id 'maven-publish'
+}
+
+repositories {
+	// Дополнительные Maven-репозитории здесь не нужны.
+	// Fabric Loom сам подключает необходимые репозитории.
+}
+
+loom {
+	// Разделяем общий и клиентский исходный код.
+	splitEnvironmentSourceSets()
+
+	// ОБЯЗАТЕЛЬНО: здесь должен быть ID мода из fabric.mod.json.
+	mods {
+		"chess" {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+		}
+	}
+}
+
+dependencies {
+	// Minecraft
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+
+	// Yarn mappings
+	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+
+	// Fabric Loader
+	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+	// Fabric API
+	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+}
+
+processResources {
+	def version = project.version
+
+	inputs.property "version", version
+
+	filesMatching("fabric.mod.json") {
+		expand "version": version
+	}
+}
+
+// Компиляция под Java 17.
+// Minecraft 1.20.1 проект у тебя собирается именно под Java 17,
+// даже если сам Gradle запускается через установленную Java 25.
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 17
+}
+
+java {
+	sourceCompatibility = JavaVersion.VERSION_17
+	targetCompatibility = JavaVersion.VERSION_17
+
+	// Генерация sources jar
+	withSourcesJar()
+}
+
+jar {
+	def projectName = project.name
+
+	inputs.property "projectName", projectName
+
+	from("LICENSE") {
+		rename { "${it}_${projectName}" }
+	}
+}
+
+publishing {
+	publications {
+		create("mavenJava", MavenPublication) {
+			from components.java
+		}
+	}
+
+	repositories {
+		// Репозитории для публикации можно добавить позже.
+	}
+}
