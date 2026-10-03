@@ -5,9 +5,12 @@ import com.chess.client.model.ChessLadyaModel;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
 import software.bernie.geckolib.renderer.GeoBlockRenderer;
 
-public class ChessFigureRenderer extends GeoBlockRenderer<ChessFigureBlockEntity> {
+public class ChessFigureRenderer
+        extends GeoBlockRenderer<ChessFigureBlockEntity> {
 
-    public ChessFigureRenderer(BlockEntityRendererFactory.Context context) {
+    public ChessFigureRenderer(
+            BlockEntityRendererFactory.Context context
+    ) {
         super(new ChessLadyaModel());
     }
 }

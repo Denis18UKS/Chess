@@ -1,77 +1,85 @@
 package com.chess.client;
 
 import com.chess.ChessFigureBlockEntity;
-import com.chess.ChessFigureBlockEntity.*;
+import com.chess.ModBlocks;
+import com.chess.client.ModKeyBindings;
+
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.hit.BlockHitResult;
+import software.bernie.geckolib.core.animation.RawAnimation;
 
-// Здесь обрабатываем нажатия клавиш.
 public class ModKeyHandler {
 
 	public static void register() {
 
-		// Выполняем проверку каждый клиентский тик.
 		ClientTickEvents.END_CLIENT_TICK.register(
-				ModKeyHandler::onClientTick
-		);
+				ModKeyHandler::onClientTick);
 	}
 
-	private static void onClientTick(MinecraftClient client) {
-
-		// Minecraft ещё не готов.
-		if (client.world == null || client.player == null) {
+	private static void onClientTick(
+			MinecraftClient client) {
+		if (client.world == null ||
+				client.player == null) {
 			return;
 		}
 
-		// Проверяем клавишу I.
+		// I — вперёд
 		while (ModKeyBindings.LADYA_FORWARD.wasPressed()) {
 			playAnimation(
 					client,
-					ChessFigureBlockEntity.LADYA_FORWARD
-			);
+					ChessFigureBlockEntity.LADYA_FORWARD,
+					ChessFigureBlockEntity.PESHKA_FORWARD);
 		}
 
-		// Проверяем клавишу K.
+		// K — назад
 		while (ModKeyBindings.LADYA_BACK.wasPressed()) {
 			playAnimation(
 					client,
-					ChessFigureBlockEntity.LADYA_BACK
-			);
+					ChessFigureBlockEntity.LADYA_BACK,
+					ChessFigureBlockEntity.PESHKA_BACK);
 		}
 
-		// Проверяем клавишу J.
+		// J — влево
 		while (ModKeyBindings.LADYA_LEFT.wasPressed()) {
 			playAnimation(
 					client,
-					ChessFigureBlockEntity.LADYA_LEFT
-			);
+					ChessFigureBlockEntity.LADYA_LEFT,
+					ChessFigureBlockEntity.PESHKA_LEFT);
 		}
 
-		// Проверяем клавишу L.
+		// L — вправо
 		while (ModKeyBindings.LADYA_RIGHT.wasPressed()) {
 			playAnimation(
 					client,
-					ChessFigureBlockEntity.LADYA_RIGHT
-			);
+					ChessFigureBlockEntity.LADYA_RIGHT,
+					ChessFigureBlockEntity.PESHKA_RIGHT);
 		}
 	}
 
 	private static void playAnimation(
 			MinecraftClient client,
-			software.bernie.geckolib.core.animation.RawAnimation animation
-	) {
-		// Проверяем, что игрок смотрит на блок.
+			RawAnimation ladyaAnimation,
+			RawAnimation peshkaAnimation) {
 		if (!(client.crosshairTarget instanceof BlockHitResult hitResult)) {
 			return;
 		}
 
-		// Получаем BlockEntity под прицелом.
-		if (client.world.getBlockEntity(hitResult.getBlockPos())
-				instanceof ChessFigureBlockEntity figure) {
+		if (!(client.world.getBlockEntity(
+				hitResult.getBlockPos()) instanceof ChessFigureBlockEntity figure)) {
+			return;
+		}
 
-			// Запускаем нужную анимацию.
-			figure.playAnimation(animation);
+		BlockState state = figure.getCachedState();
+
+		if (state.isOf(
+				ModBlocks.CHESS_WHITE_PESHKA)) {
+			figure.playAnimation(
+					peshkaAnimation);
+		} else {
+			figure.playAnimation(
+					ladyaAnimation);
 		}
 	}
 }

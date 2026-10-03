@@ -12,86 +12,101 @@ import software.bernie.geckolib.core.animation.RawAnimation;
 import software.bernie.geckolib.core.object.PlayState;
 import software.bernie.geckolib.util.GeckoLibUtil;
 
-// BlockEntity шахматной фигуры.
-// Именно здесь GeckoLib хранит состояние анимации.
-public class ChessFigureBlockEntity extends BlockEntity implements GeoBlockEntity {
+public class ChessFigureBlockEntity
+		extends BlockEntity
+		implements GeoBlockEntity {
 
-	// Кэш нужен GeckoLib для хранения состояния анимаций.
-	private final AnimatableInstanceCache cache =
-			GeckoLibUtil.createInstanceCache(this);
+	private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
-	// Анимации ладьи.
-	// ВАЖНО:
-	// Названия внутри RawAnimation должны точно совпадать
-	// с названиями animation внутри .animation.json.
-	public static final RawAnimation LADYA_FORWARD =
-			RawAnimation.begin().thenPlay("animation.ladya.forward");
+	// ============================================================
+	// ЛАДЬЯ
+	// ============================================================
 
-	public static final RawAnimation LADYA_BACK =
-			RawAnimation.begin().thenPlay("animation.ladya.back");
+	// Эти имена должны совпадать с ключами внутри:
+	// animations/figures/ladya/ladya.animation.json
 
-	public static final RawAnimation LADYA_LEFT =
-			RawAnimation.begin().thenPlay("animation.ladya.left");
+	public static final RawAnimation LADYA_FORWARD = RawAnimation.begin()
+			.thenPlay("ladya_1_forward");
 
-	public static final RawAnimation LADYA_RIGHT =
-			RawAnimation.begin().thenPlay("animation.ladya.right");
+	public static final RawAnimation LADYA_BACK = RawAnimation.begin()
+			.thenPlay("ladya_1_back");
 
-	// Пока здесь хранится анимация, которую нужно запустить.
+	public static final RawAnimation LADYA_LEFT = RawAnimation.begin()
+			.thenPlay("ladya_1_left");
+
+	public static final RawAnimation LADYA_RIGHT = RawAnimation.begin()
+			.thenPlay("ladya_1_right");
+
+	// ============================================================
+	// ПЕШКА
+	// ============================================================
+
+	// Эти имена будут находиться внутри:
+	// animations/figures/peshka/peshka.animation.json
+
+	public static final RawAnimation PESHKA_FORWARD = RawAnimation.begin()
+			.thenPlay("peshka_forward");
+
+	public static final RawAnimation PESHKA_BACK = RawAnimation.begin()
+			.thenPlay("peshka_back");
+
+	public static final RawAnimation PESHKA_LEFT = RawAnimation.begin()
+			.thenPlay("peshka_left");
+
+	public static final RawAnimation PESHKA_RIGHT = RawAnimation.begin()
+			.thenPlay("peshka_right");
+
+	// Анимация, которую нужно запустить.
 	private RawAnimation pendingAnimation;
 
-	public ChessFigureBlockEntity(BlockPos pos, BlockState state) {
-		super(ModBlockEntities.CHESS_FIGURE, pos, state);
+	public ChessFigureBlockEntity(
+			BlockPos pos,
+			BlockState state) {
+		super(
+				ModBlockEntities.CHESS_FIGURE,
+				pos,
+				state);
 	}
 
 	@Override
 	public void registerControllers(
-			AnimatableManager.ControllerRegistrar controllers
-	) {
-		// Создаём контроллер, который отвечает за проигрывание
-		// анимаций шахматной фигуры.
+			AnimatableManager.ControllerRegistrar controllers) {
 		controllers.add(
 				new AnimationController<>(
 						this,
 						"figure_controller",
 						0,
-						this::animationController
-				)
-		);
+						this::animationController));
 	}
 
-	// Основная логика анимационного контроллера.
 	private <E extends ChessFigureBlockEntity> PlayState animationController(
-			AnimationState<E> state
-	) {
-		// Если поступила команда на запуск новой анимации.
+			AnimationState<E> state) {
 		if (pendingAnimation != null) {
 
-			// Передаём анимацию GeckoLib.
-			state.getController().setAnimation(pendingAnimation);
+			// Позволяет повторно запустить даже ту же
+			// самую одноразовую анимацию.
+			state.getController().forceAnimationReset();
 
-			// Удаляем запрос, чтобы анимация не запускалась заново
-			// каждый кадр.
+			state.getController().setAnimation(
+					pendingAnimation);
+
 			pendingAnimation = null;
 
 			return PlayState.CONTINUE;
 		}
 
-		// Пока текущая анимация не закончилась,
-		// продолжаем её проигрывать.
 		if (!state.getController().hasAnimationFinished()) {
 			return PlayState.CONTINUE;
 		}
 
-		// После завершения ничего не проигрываем.
 		return PlayState.STOP;
 	}
 
-	// Запрашивает проигрывание анимации.
-	public void playAnimation(RawAnimation animation) {
+	public void playAnimation(
+			RawAnimation animation) {
 		this.pendingAnimation = animation;
 	}
 
-	// Возвращаем кэш GeckoLib.
 	@Override
 	public AnimatableInstanceCache getAnimatableInstanceCache() {
 		return cache;
