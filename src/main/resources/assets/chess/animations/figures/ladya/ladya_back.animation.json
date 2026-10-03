@@ -1,0 +1,133 @@
+{
+	"format_version": "1.8.0",
+	"animations": {
+		"ladya_1_back": {
+			"animation_length": 1.5,
+			"bones": {
+				"bone": {
+					"position": {
+						"0.0": {
+							"vector": [0, 0, 0]
+						},
+						"1.0": {
+							"vector": [0, 0, -16],
+							"easing": "easeInOutSine"
+						}
+					}
+				}
+			}
+		},
+		"ladya_2_back": {
+			"animation_length": 1.5,
+			"bones": {
+				"bone": {
+					"position": {
+						"0.0": {
+							"vector": [0, 0, 0]
+						},
+						"1.0": {
+							"vector": [0, 0, -32],
+							"easing": "easeInOutSine"
+						}
+					}
+				}
+			}
+		},
+		"ladya_3_back": {
+			"animation_length": 1.5,
+			"bones": {
+				"bone": {
+					"position": {
+						"0.0": {
+							"vector": [0, 0, 0]
+						},
+						"1.0": {
+							"vector": [0, 0, -48],
+							"easing": "easeInOutSine"
+						}
+					}
+				}
+			}
+		},
+		"ladya_4_back": {
+			"animation_length": 1.5,
+			"bones": {
+				"bone": {
+					"position": {
+						"0.0": {
+							"vector": [0, 0, 0]
+						},
+						"1.0": {
+							"vector": [0, 0, -64],
+							"easing": "easeInOutSine"
+						}
+					}
+				}
+			}
+		},
+		"ladya_5_back": {
+			"animation_length": 1.5,
+			"bones": {
+				"bone": {
+					"position": {
+						"0.0": {
+							"vector": [0, 0, 0]
+						},
+						"1.0": {
+							"vector": [0, 0, -80],
+							"easing": "easeInOutSine"
+						}
+					}
+				}
+			}
+		},
+		"ladya_6_back": {
+			"animation_length": 1.5,
+			"bones": {
+				"bone": {
+					"position": {
+						"0.0": {
+							"vector": [0, 0, 0]
+						},
+						"1.0": {
+							"vector": [0, 0, -96],
+							"easing": "easeInOutSine"
+						}
+					}
+				}
+			}
+		},
+		"ladya_7_back": {
+			"animation_length": 1.5,
+			"bones": {
+				"bone": {
+					"position": {
+						"0.0": {
+							"vector": [0, 0, 0]
+						},
+						"1.0": {
+							"vector": [0, 0, -112],
+							"easing": "easeInOutSine"
+						}
+					}
+				}
+			}
+		},
+		"ladya_8_back": {
+			"animation_length": 1.5,
+			"bones": {
+				"bone": {
+					"position": {
+						"0.0": {
+							"vector": [0, 0, 0]
+						},
+						"1.0": {
+							"vector": [0, 0, -128],
+							"easing": "easeInOutSine"
+						}
+					}
+				}
+			}
+		}
+	}
+}
