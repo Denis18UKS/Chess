@@ -3,7 +3,7 @@
 	"package": "com.chess.mixin",
 	"compatibilityLevel": "JAVA_17",
 	"mixins": [
-		"ExampleMixin"
+		"ChessMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

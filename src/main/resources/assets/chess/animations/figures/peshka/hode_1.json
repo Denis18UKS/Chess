@@ -1,1 +1,20 @@
-{"length":1,"animations":[{"bone":"bone","target":"position","keyframes":[{"timestamp":0,"target":[0,0,0],"interpolation":"linear"},{"timestamp":0.75,"target":[0,0,16],"interpolation":"linear"}]}]}
+{
+	"format_version": "1.8.0",
+	"animations": {
+		"hode_1": {
+			"animation_length": 1,
+			"bones": {
+				"bone": {
+					"position": {
+						"0.0": {
+							"vector": [0, 0, 0]
+						},
+						"0.75": {
+							"vector": [0, 0, 16]
+						}
+					}
+				}
+			}
+		}
+	}
+}

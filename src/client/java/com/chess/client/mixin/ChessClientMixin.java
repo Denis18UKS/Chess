@@ -9,7 +9,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 // Клиентский Mixin.
 // Он позволяет изменять код MinecraftClient только на стороне клиента.
 @Mixin(MinecraftClient.class)
-public class ExampleClientMixin {
+public class ChessClientMixin {
 
 	// Вставляем наш код в самое начало метода run().
 	// run() — основной цикл работы клиента Minecraft.

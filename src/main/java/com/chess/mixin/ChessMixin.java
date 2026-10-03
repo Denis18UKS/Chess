@@ -9,7 +9,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 // Mixin позволяет изменять существующий код Minecraft
 // без непосредственного изменения исходников Minecraft.
 @Mixin(MinecraftServer.class)
-public class ExampleMixin {
+public class ChessMixin {
 
 	// Вставляем наш код в самое начало метода loadWorld().
 	// loadWorld() вызывается при загрузке игрового мира на серверной стороне.
