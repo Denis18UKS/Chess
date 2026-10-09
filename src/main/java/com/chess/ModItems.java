@@ -13,6 +13,7 @@ public final class ModItems {
     public static final Item CHESS_BOARD_TOOL = register("chess_board_tool", new ChessBoardToolItem(new Item.Settings().maxCount(1)));
     public static final Item CHESS_TELEPORT_TOOL = register("chess_teleport_tool", new ChessTeleportToolItem(new Item.Settings().maxCount(1)));
     public static final Item CHESS_GRAFFITI_TOOL = register("chess_graffiti_tool", new ChessGraffitiToolItem(new Item.Settings().maxCount(1)));
+    public static final Item CHESS_ASSET_STUDIO_TOOL = register("chess_asset_studio_tool", new ChessAssetStudioItem(new Item.Settings().maxCount(1)));
 
     public static final ItemGroup CHESS_GROUP = Registry.register(
         Registries.ITEM_GROUP,
@@ -27,6 +28,7 @@ public final class ModItems {
                 entries.add(CHESS_BOARD_TOOL);
                 entries.add(CHESS_TELEPORT_TOOL);
                 entries.add(CHESS_GRAFFITI_TOOL);
+                entries.add(CHESS_ASSET_STUDIO_TOOL);
             }).build()
     );
 
