@@ -96,6 +96,8 @@ public final class ChessGameManager {
         state.paused = false;
         state.whiteTurn = true;
         state.pending = null;
+        state.promotionPending = false;
+        autoConfigureCaptures(world, state);
         broadcast(world, "Шахматная партия началась. Первый ход — белые.");
         updateTeamHighlights(world.getServer(), state);
     }
@@ -341,6 +343,7 @@ public final class ChessGameManager {
         if (!state.running) { tell(player, "Сначала выполните /chess start."); return; }
         if (state.paused) { tell(player, "Партия приостановлена."); return; }
         if (state.pending != null) { tell(player, "Дождитесь завершения анимации предыдущего хода."); return; }
+        if (state.promotionPending) { tell(player, "Сначала выберите фигуру для превращения пешки."); return; }
         if (!inside(fr, fc) || !inside(tr, tc) || (fr == tr && fc == tc)) { tell(player, "Некорректная клетка."); return; }
 
         char[][] cells = readBoard(world);
@@ -365,8 +368,8 @@ public final class ChessGameManager {
             tell(player, "Сейчас ход " + (state.whiteTurn ? "белых" : "чёрных") + "."); return;
         }
 
-        boolean enforceMovement = state.ruleMode != RuleMode.NO_REALISM;
-        boolean full = state.ruleMode == RuleMode.FULL_REALISM;
+        boolean enforceMovement = state.ruleMode != RuleMode.NO_REALISM || state.threeDimensional;
+        boolean full = state.ruleMode != RuleMode.NO_REALISM || state.threeDimensional;
         boolean kingMoved = type.isWhite() ? state.whiteKingMoved : state.blackKingMoved;
         boolean leftRookMoved = type.isWhite() ? state.whiteLeftRookMoved : state.blackLeftRookMoved;
         boolean rightRookMoved = type.isWhite() ? state.whiteRightRookMoved : state.blackRightRookMoved;
@@ -381,6 +384,7 @@ public final class ChessGameManager {
         BlockState movingState = world.getBlockState(from);
         boolean enPassant = Character.toUpperCase(moving) == 'P' && fc != tc && target == '.';
         BlockPos epCapture = enPassant ? piecePos(state, fr, tc) : null;
+        char capturedSymbol = enPassant ? cells[fr][tc] : target;
         boolean castle = Character.toUpperCase(moving) == 'K' && Math.abs(tc - fc) == 2;
         BlockPos rookFrom = castle ? piecePos(state, fr, tc > fc ? 7 : 0) : null;
         BlockPos rookTo = castle ? piecePos(state, fr, tc > fc ? 5 : 3) : null;
@@ -397,7 +401,7 @@ public final class ChessGameManager {
         if (castle && world.getBlockEntity(rookFrom) instanceof ChessFigureBlockEntity rookEntity)
             rookEntity.beginMove(rookTo, animationTicks);
         state.pending = new PendingMove(from, to, movingState, epCapture, rookFrom, rookTo, rookState,
-            type, fr, fc, tr, tc, movingYaw, rookYaw, serverTick(world.getServer()) + animationTicks, player.getUuid());
+            type, fr, fc, tr, tc, movingYaw, rookYaw, capturedSymbol, serverTick(world.getServer()) + animationTicks, player.getUuid());
         state.enPassantRow = Character.toUpperCase(moving) == 'P' && Math.abs(tr - fr) == 2 ? (tr + fr) / 2 : -1;
         state.enPassantCol = state.enPassantRow < 0 ? -1 : fc;
         updateMovedFlags(state, type, fr, fc);
