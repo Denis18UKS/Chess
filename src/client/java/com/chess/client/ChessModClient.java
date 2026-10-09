@@ -57,6 +57,7 @@ public class ChessModClient implements ClientModInitializer {
                 }
             }
             if (!player.isSneaking() && ModBlocks.isFigureItem(stack)) {
+                if (world.isClient && ChessClientNetwork.threeDimensional) return ActionResult.PASS;
                 if (world.isClient) openBoard(stack.getItem());
                 return ActionResult.SUCCESS;
             }
