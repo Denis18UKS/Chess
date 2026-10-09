@@ -1,7 +1,10 @@
 package com.chess.client;
 
+import com.chess.ChessGraffitiToolItem;
+import com.chess.ChessNetwork;
 import com.chess.ModBlockEntities;
 import com.chess.ModBlocks;
+import com.chess.ModItems;
 import com.chess.client.renderer.ChessFigureRenderer;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
@@ -19,18 +22,34 @@ public class ChessModClient implements ClientModInitializer {
         ChessClientNetwork.registerClient();
 
         UseBlockCallback.EVENT.register((player, world, hand, hit) -> {
-            if (!player.isSneaking() && ModBlocks.isFigureItem(player.getStackInHand(hand))) {
-                if (world.isClient) openBoard(player.getStackInHand(hand).getItem());
+            var stack = player.getStackInHand(hand);
+            if (!player.isSneaking() && ModBlocks.isFigureItem(stack)) {
+                if (world.isClient) openBoard(stack.getItem());
                 return ActionResult.SUCCESS;
+            }
+            if (stack.isOf(ModItems.CHESS_ASSET_STUDIO_TOOL)) {
+                if (world.isClient) MinecraftClient.getInstance().setScreen(new ChessAssetStudioScreen(MinecraftClient.getInstance().currentScreen));
+                return world.isClient ? ActionResult.SUCCESS : ActionResult.PASS;
+            }
+            if (stack.isOf(ModItems.CHESS_GRAFFITI_TOOL)) {
+                if (world.isClient) MinecraftClient.getInstance().setScreen(new ChessGraffitiScreen(
+                    MinecraftClient.getInstance().currentScreen, hit.getBlockPos()));
+                return world.isClient ? ActionResult.SUCCESS : ActionResult.PASS;
             }
             return ActionResult.PASS;
         });
+
         UseItemCallback.EVENT.register((player, world, hand) -> {
-            if (!player.isSneaking() && ModBlocks.isFigureItem(player.getStackInHand(hand))) {
-                if (world.isClient) openBoard(player.getStackInHand(hand).getItem());
-                return TypedActionResult.success(player.getStackInHand(hand));
+            var stack = player.getStackInHand(hand);
+            if (!player.isSneaking() && ModBlocks.isFigureItem(stack)) {
+                if (world.isClient) openBoard(stack.getItem());
+                return TypedActionResult.success(stack);
             }
-            return TypedActionResult.pass(player.getStackInHand(hand));
+            if (stack.isOf(ModItems.CHESS_ASSET_STUDIO_TOOL)) {
+                if (world.isClient) MinecraftClient.getInstance().setScreen(new ChessAssetStudioScreen(MinecraftClient.getInstance().currentScreen));
+                return TypedActionResult.success(stack);
+            }
+            return TypedActionResult.pass(stack);
         });
     }
 
