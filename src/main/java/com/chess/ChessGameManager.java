@@ -431,30 +431,50 @@ public final class ChessGameManager {
             ChessPieceType sourcePiece = ChessPieceType.fromBlock(world.getBlockState(move.from));
             if (sourcePiece == null || sourcePiece != move.type) {
                 state.pending = null;
+                state.selected3DPieces.clear();
                 continue;
             }
-            BlockState targetState = move.movingState;
-            if (move.type == ChessPieceType.WHITE_PAWN && move.tr == 0) targetState = ModBlocks.CHESS_WHITE_FERZ.getDefaultState();
-            if (move.type == ChessPieceType.BLACK_PAWN && move.tr == 7) targetState = ModBlocks.CHESS_BLACK_FERZ.getDefaultState();
 
-            world.setBlockState(move.to, targetState);
-            if (world.getBlockEntity(move.to) instanceof ChessFigureBlockEntity movedEntity) {
-                movedEntity.setYawDegrees(move.movingYaw);
+            boolean needsPromotion = (move.type == ChessPieceType.WHITE_PAWN && move.tr == 0)
+                || (move.type == ChessPieceType.BLACK_PAWN && move.tr == 7);
+            if (move.capturedSymbol != '.') {
+                registerCapturedPiece(world, state, move.capturedSymbol, move.type.isWhite());
+                world.playSound(null, move.to, SoundEvents.ENTITY_PLAYER_ATTACK_STRONG, SoundCategory.PLAYERS, 0.9f, 1.05f);
             }
+
+            // Leave a pawn on the back rank until its owner chooses the replacement.
+            world.setBlockState(move.to, move.movingState, 3);
+            if (world.getBlockEntity(move.to) instanceof ChessFigureBlockEntity movedEntity)
+                movedEntity.setYawDegrees(move.movingYaw);
             world.setBlockState(move.from, Blocks.AIR.getDefaultState(), 3);
             if (move.enPassantCapture != null) world.setBlockState(move.enPassantCapture, Blocks.AIR.getDefaultState(), 3);
             if (move.rookFrom != null && ChessPieceType.fromBlock(move.rookState) != null) {
-                world.setBlockState(move.rookTo, move.rookState);
-                if (world.getBlockEntity(move.rookTo) instanceof ChessFigureBlockEntity movedRook) {
+                world.setBlockState(move.rookTo, move.rookState, 3);
+                if (world.getBlockEntity(move.rookTo) instanceof ChessFigureBlockEntity movedRook)
                     movedRook.setYawDegrees(move.rookYaw);
-                }
                 world.setBlockState(move.rookFrom, Blocks.AIR.getDefaultState(), 3);
             }
             state.pending = null;
-            if (state.ruleMode != RuleMode.NO_REALISM) state.whiteTurn = !state.whiteTurn;
-            updateTeamHighlights(server, state);
-            announceTurn(world, state);
-            if (state.ruleMode == RuleMode.FULL_REALISM) checkEndCondition(world, state);
+            state.selected3DPieces.clear();
+            world.playSound(null, move.to, SoundEvents.BLOCK_WOOD_PLACE, SoundCategory.PLAYERS, 0.65f, 1.0f);
+
+            if (needsPromotion) {
+                state.promotionPending = true;
+                state.promotionWhite = move.type.isWhite();
+                state.promotionRow = move.tr;
+                state.promotionCol = move.tc;
+                state.promotionPlayerId = move.playerId;
+                for (ServerPlayerEntity player : world.getPlayers()) ChessNetwork.sendBoard(player);
+                broadcast(world, "Пешка дошла до края доски. Выберите фигуру для превращения.");
+            } else {
+                if (state.ruleMode != RuleMode.NO_REALISM || state.threeDimensional) state.whiteTurn = !state.whiteTurn;
+                updateTeamHighlights(server, state);
+                announceTurn(world, state);
+                if (state.ruleMode != RuleMode.NO_REALISM || state.threeDimensional) checkEndCondition(world, state);
+            }
+            for (ServerPlayerEntity player : world.getPlayers())
+                ChessNetwork.sendHighlights(player, BlockPos.ORIGIN, -1, -1, new boolean[64]);
+            ChessNetwork.broadcastBoard(world);
         }
     }
 
