@@ -22,5 +22,6 @@
   "key.chess.ladya_left": "Rook: left",
   "key.chess.ladya_right": "Rook: right",
   "category.chess": "Chess",
-  "item.chess.chess_asset_studio_tool": "Model & Texture Studio"
+  "item.chess.chess_asset_studio_tool": "Model & Texture Studio",
+  "key.chess.switch_team": "Switch team (DEV)"
 }
