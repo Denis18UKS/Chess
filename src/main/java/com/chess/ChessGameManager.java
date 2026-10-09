@@ -218,13 +218,12 @@ public final class ChessGameManager {
             ? movingEntity.getYawDegrees() : 0.0f;
         float rookYaw = castle && world.getBlockEntity(rookFrom) instanceof ChessFigureBlockEntity rookEntity
             ? rookEntity.getYawDegrees() : 0.0f;
-        String animation = animationFor(type, tr - fr, tc - fc);
-        int animationTicks = animation.startsWith("horse") || "hode_2".equals(animation) ? 40
-            : "hode_1".equals(animation) ? 20 : 30;
-        ChessNetwork.broadcastAnimation(world, from, animation);
-        if (castle && ChessPieceType.fromBlock(rookState) != null) {
-            ChessNetwork.broadcastAnimation(world, rookFrom, animationFor(ChessPieceType.fromBlock(rookState), 0, tc > fc ? 1 : -1));
-        }
+        int animationTicks = Math.max(6, Math.min(12, Math.max(Math.abs(tr - fr), Math.abs(tc - fc)) * 2
+            + (type.model().equals("horse") ? 2 : 0)));
+        if (world.getBlockEntity(from) instanceof ChessFigureBlockEntity movingEntity)
+            movingEntity.beginMove(to, animationTicks, type.model().equals("horse"));
+        if (castle && world.getBlockEntity(rookFrom) instanceof ChessFigureBlockEntity rookEntity)
+            rookEntity.beginMove(rookTo, animationTicks);
         state.pending = new PendingMove(from, to, movingState, epCapture, rookFrom, rookTo, rookState,
             type, fr, fc, tr, tc, movingYaw, rookYaw, serverTick(world.getServer()) + animationTicks, player.getUuid());
         state.enPassantRow = Character.toUpperCase(moving) == 'P' && Math.abs(tr - fr) == 2 ? (tr + fr) / 2 : -1;
@@ -299,34 +298,6 @@ public final class ChessGameManager {
                 : "Пат. Ничья.");
         } else if (inCheck) {
             broadcast(world, "Шах " + (whiteToMove ? "белому" : "чёрному") + " королю!");
-        }
-    }
-
-    private static String animationFor(ChessPieceType type, int dr, int dc) {
-        int distance = Math.max(Math.abs(dr), Math.abs(dc));
-        distance = Math.max(1, Math.min(8, distance));
-        switch (type.model()) {
-            case "ladya":
-                if (dr > 0) return "ladya_" + distance + "_forward";
-                if (dr < 0) return "ladya_" + distance + "_back";
-                if (dc > 0) return "ladya_" + distance + "_right";
-                return "ladya_" + distance + "_left";
-            case "ferz":
-                if (dr == 0) return dc > 0 ? "ferz_" + distance + "_right" : "ferz_" + distance + "_left";
-                if (dc == 0) return dr > 0 ? "ferz_" + distance + "_forward" : "ferz_" + distance + "_back";
-                return "ferz_" + (dr > 0 ? "forward" : "back") + (dc > 0 ? "_right_diag_" : "_left_diag_") + distance;
-            case "el":
-                return "el_" + (dr > 0 ? "forward" : "back") + (dc > 0 ? "_right_diag_" : "_left_diag_") + distance;
-            case "king":
-                if (dr == 0 && dc == 0) return "king_1_forward";
-                if (dr == 0) return dc > 0 ? "king_1_right" : "king_1_left";
-                if (dc == 0) return dr > 0 ? "king_1_forward" : "king_1_back";
-                return "king_" + (dr > 0 ? "forward" : "back") + (dc > 0 ? "_right_diag_1" : "_left_diag_1");
-            case "horse":
-                if (Math.abs(dc) == 2) return "horse_g_" + (dr > 0 ? "forward" : "back") + (dc > 0 ? "_right_1" : "_left_1");
-                return "horse_g_" + (dr > 0 ? "forward" : "back") + (dc > 0 ? "_right_2" : "_left_2");
-            case "peshka":
-            default: return "hode_" + (Math.abs(dr) == 2 ? "2" : "1");
         }
     }
 
