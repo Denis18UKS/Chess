@@ -1,0 +1,156 @@
+package com.chess.client;
+
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.text.Text;
+import net.minecraft.util.math.BlockPos;
+
+/** Live 2D view of the physical 8x8 chess field. */
+public class ChessBoardScreen extends Screen {
+    private static String cells = "................................................................";
+    private static boolean configured, running, paused, whiteTurn = true;
+    private static String ruleMode = "REALISM", matchMode = "ONE_ONE";
+    private static BlockPos origin = BlockPos.ORIGIN;
+
+    private final String heldItemPath;
+    private int fromRow = -1, fromCol = -1, toRow = -1, toCol = -1;
+    private int refreshTicks;
+
+    public ChessBoardScreen(String heldItemPath) {
+        super(Text.literal("Chess — поле"));
+        this.heldItemPath = heldItemPath == null ? "" : heldItemPath;
+    }
+
+    public static void acceptSnapshot(String board, boolean hasBoard, boolean isRunning, boolean isPaused,
+                                      boolean whitesTurn, String rules, String mode, BlockPos boardOrigin) {
+        if (board != null && board.length() == 64) cells = board;
+        configured = hasBoard;
+        running = isRunning;
+        paused = isPaused;
+        whiteTurn = whitesTurn;
+        ruleMode = rules;
+        matchMode = mode;
+        origin = boardOrigin;
+    }
+
+    @Override
+    protected void init() {
+        super.init();
+        ChessClientNetwork.requestBoard();
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (++refreshTicks >= 10) {
+            refreshTicks = 0;
+            ChessClientNetwork.requestBoard();
+        }
+    }
+
+    @Override
+    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        renderBackground(context);
+        String status = !configured ? "Поле не настроено" : !running ? "Партия остановлена" : paused ? "ПАУЗА" : (whiteTurn ? "ХОД БЕЛЫХ" : "ХОД ЧЁРНЫХ");
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal("ШАХМАТЫ  ·  " + status), width / 2, 12, whiteTurn && running && !paused ? 0xFFFFD75E : 0xFFFFFFFF);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(ruleLabel(ruleMode) + "  ·  " + (matchMode.equals("TWO_TWO") ? "2v2" : "1v1")), width / 2, 28, 0xFFBBBBBB);
+
+        int cell = Math.min(30, Math.min((width - 36) / 8, (height - 108) / 8));
+        cell = Math.max(20, cell);
+        int boardSize = cell * 8;
+        int boardX = (width - boardSize) / 2;
+        int boardY = Math.max(44, (height - boardSize - 56) / 2 + 10);
+
+        for (int row = 0; row < 8; row++) {
+            for (int col = 0; col < 8; col++) {
+                int x = boardX + col * cell, y = boardY + row * cell;
+                boolean light = (row + col) % 2 == 0;
+                int color = light ? 0xFFE8D9BC : 0xFF78906B;
+                if (row == fromRow && col == fromCol) color = 0xFFDBB43F;
+                if (row == toRow && col == toCol) color = 0xFF4AAB89;
+                context.fill(x, y, x + cell, y + cell, color);
+                char piece = cells.charAt(row * 8 + col);
+                if (piece != '.') {
+                    int pieceColor = Character.isUpperCase(piece) ? 0xFFFFFFFF : 0xFF202020;
+                    String glyph = String.valueOf(piece);
+                    context.drawCenteredTextWithShadow(textRenderer, Text.literal(glyph), x + cell / 2, y + (cell - 8) / 2, pieceColor);
+                }
+                if (row == 7) context.drawTextWithShadow(textRenderer, String.valueOf((char)('a' + col)), x + cell - 8, boardY + boardSize + 2, 0xFFCCCCCC);
+                if (col == 0) context.drawTextWithShadow(textRenderer, String.valueOf(8 - row), boardX - 10, y + (cell - 8) / 2, 0xFFCCCCCC);
+            }
+        }
+
+        String hint = !configured
+            ? "Поставьте инструмент Chess Board Configurator на первую клетку"
+            : ruleMode.equals("FULL_REALISM") ? "Полный реализм: выберите фигуру соответствующего предмета"
+            : "Выберите фигуру на поле, затем клетку назначения";
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(hint), width / 2, boardY + boardSize + 15, 0xFFFFFFFF);
+
+        int buttonY = boardY + boardSize + 32;
+        int confirmX = width / 2 - 92, cancelX = width / 2 + 4;
+        context.fill(confirmX, buttonY, confirmX + 88, buttonY + 20, fromRow >= 0 && toRow >= 0 ? 0xFF267B50 : 0xFF444444);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Подтвердить"), confirmX + 44, buttonY + 6, 0xFFFFFFFF);
+        context.fill(cancelX, buttonY, cancelX + 88, buttonY + 20, 0xFF575757);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Отмена"), cancelX + 44, buttonY + 6, 0xFFFFFFFF);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Поле: " + origin.getX() + " " + origin.getY() + " " + origin.getZ()), width / 2, height - 13, 0xFF888888);
+        super.render(context, mouseX, mouseY, delta);
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (button != 0) return super.mouseClicked(mouseX, mouseY, button);
+        int cell = Math.min(30, Math.min((width - 36) / 8, (height - 108) / 8));
+        cell = Math.max(20, cell);
+        int boardSize = cell * 8;
+        int boardX = (width - boardSize) / 2;
+        int boardY = Math.max(44, (height - boardSize - 56) / 2 + 10);
+        if (mouseX >= boardX && mouseX < boardX + boardSize && mouseY >= boardY && mouseY < boardY + boardSize) {
+            int col = (int)(mouseX - boardX) / cell;
+            int row = (int)(mouseY - boardY) / cell;
+            char selected = cells.charAt(row * 8 + col);
+            if (fromRow < 0) {
+                if (selected != '.' && matchesHeldPiece(selected)) { fromRow = row; fromCol = col; toRow = toCol = -1; }
+            } else if (row == fromRow && col == fromCol) {
+                fromRow = fromCol = toRow = toCol = -1;
+            } else if (selected != '.' && Character.isUpperCase(selected) == Character.isUpperCase(cells.charAt(fromRow * 8 + fromCol))) {
+                fromRow = row; fromCol = col; toRow = toCol = -1;
+            } else {
+                toRow = row; toCol = col;
+            }
+            return true;
+        }
+        int buttonY = boardY + boardSize + 32;
+        if (mouseY >= buttonY && mouseY <= buttonY + 20) {
+            if (mouseX >= width / 2 - 92 && mouseX <= width / 2 - 4 && fromRow >= 0 && toRow >= 0) {
+                ChessClientNetwork.requestMove(fromRow, fromCol, toRow, toCol);
+                fromRow = fromCol = toRow = toCol = -1;
+                ChessClientNetwork.requestBoard();
+                return true;
+            }
+            if (mouseX >= width / 2 + 4 && mouseX <= width / 2 + 92) {
+                fromRow = fromCol = toRow = toCol = -1;
+                return true;
+            }
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    private boolean matchesHeldPiece(char piece) {
+        if (!ruleMode.equals("FULL_REALISM")) return true;
+        String path = heldItemPath.toLowerCase();
+        char symbol = path.contains("king") ? 'K' : path.contains("ferz") ? 'Q' : path.contains("ladya") ? 'R'
+            : path.contains("_el") ? 'B' : path.contains("horse") ? 'N' : path.contains("peshka") ? 'P' : '?';
+        if (symbol == '?' || Character.toUpperCase(piece) != symbol) return false;
+        boolean heldWhite = path.contains("white");
+        return Character.isUpperCase(piece) == heldWhite;
+    }
+
+    private String ruleLabel(String mode) {
+        if ("FULL_REALISM".equals(mode)) return "Полный реализм";
+        if ("NO_REALISM".equals(mode)) return "Свободный режим";
+        return "Реализм";
+    }
+
+    @Override
+    public boolean shouldPause() { return false; }
+}
