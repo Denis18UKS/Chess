@@ -142,7 +142,8 @@ public class ChessAssetStudioScreen extends Screen {
         MinecraftClient client = MinecraftClient.getInstance();
         String profile = "file/ChessCustom";
         client.getResourcePackManager().scanPacks();
-        if (!client.options.resourcePacks.contains(profile)) client.options.resourcePacks.add(profile);
+        client.options.resourcePacks.remove(profile);
+        client.options.resourcePacks.add(0, profile);
         client.getResourcePackManager().setEnabledProfiles(client.options.resourcePacks);
         client.options.write();
         client.reloadResources();
