@@ -16,6 +16,11 @@ public final class ChessNetwork {
     public static final Identifier MOVE = ChessMod.id("move");
     public static final Identifier ANIMATE = ChessMod.id("animate_piece");
     public static final Identifier GRAFFITI_CREATE = ChessMod.id("graffiti_create");
+    public static final Identifier SELECT_3D = ChessMod.id("select_3d_piece");
+    public static final Identifier MOVE_3D = ChessMod.id("move_3d_piece");
+    public static final Identifier HIGHLIGHTS = ChessMod.id("move_highlights");
+    public static final Identifier DEV_SWITCH_TEAM = ChessMod.id("dev_switch_team");
+    public static final Identifier PROMOTION = ChessMod.id("promotion_choice");
 
     private ChessNetwork() {}
 
@@ -25,6 +30,22 @@ public final class ChessNetwork {
         ServerPlayNetworking.registerGlobalReceiver(MOVE, (server, player, handler, buf, responseSender) -> {
             int fr = buf.readInt(), fc = buf.readInt(), tr = buf.readInt(), tc = buf.readInt();
             server.execute(() -> ChessGameManager.tryMove(player, fr, fc, tr, tc));
+        });
+        ServerPlayNetworking.registerGlobalReceiver(SELECT_3D, (server, player, handler, buf, responseSender) -> {
+            BlockPos pos = buf.readBlockPos();
+            server.execute(() -> ChessGameManager.select3DPiece(player, pos));
+        });
+        ServerPlayNetworking.registerGlobalReceiver(MOVE_3D, (server, player, handler, buf, responseSender) -> {
+            BlockPos pos = buf.readBlockPos();
+            server.execute(() -> ChessGameManager.moveSelected3D(player, pos));
+        });
+        ServerPlayNetworking.registerGlobalReceiver(DEV_SWITCH_TEAM, (server, player, handler, buf, responseSender) ->
+            server.execute(() -> {
+                if (!ChessGameManager.switchDevTeam(player)) player.sendMessage(net.minecraft.text.Text.literal("Кейбинд доступен только после /chessdev."), false);
+            }));
+        ServerPlayNetworking.registerGlobalReceiver(PROMOTION, (server, player, handler, buf, responseSender) -> {
+            String choice = buf.readString(4);
+            server.execute(() -> ChessGameManager.choosePromotion(player, choice));
         });
         ServerPlayNetworking.registerGlobalReceiver(GRAFFITI_CREATE, (server, player, handler, buf, responseSender) -> {
             BlockPos pos = buf.readBlockPos();
@@ -53,7 +74,35 @@ public final class ChessNetwork {
         buf.writeString(state.ruleMode.name());
         buf.writeString(state.matchMode.name());
         buf.writeBlockPos(state.origin);
+        buf.writeBoolean(state.threeDimensional);
+        buf.writeBoolean(player.getCommandTags().contains("chess_dev"));
+        buf.writeBoolean(state.promotionPending && player.getUuid().equals(state.promotionPlayerId));
+        buf.writeBoolean(state.promotionWhite);
+        buf.writeInt(state.promotionRow);
+        buf.writeInt(state.promotionCol);
+        buf.writeString(ChessGameManager.promotionOptions(state, state.promotionWhite), 8);
+        buf.writeString(capturedString(state.whiteCapturedPieces), 32);
+        buf.writeString(capturedString(state.blackCapturedPieces), 32);
         ServerPlayNetworking.send(player, BOARD_STATE, buf);
+    }
+
+    private static String capturedString(java.util.List<Character> pieces) {
+        StringBuilder value = new StringBuilder(pieces.size());
+        for (char piece : pieces) value.append(piece);
+        return value.toString();
+    }
+
+    public static void broadcastBoard(ServerWorld world) {
+        for (ServerPlayerEntity player : PlayerLookup.world(world)) sendBoard(player);
+    }
+
+    public static void sendHighlights(ServerPlayerEntity player, BlockPos selected, int row, int col, boolean[] legal) {
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeBlockPos(selected == null ? BlockPos.ORIGIN : selected);
+        buf.writeInt(row);
+        buf.writeInt(col);
+        for (int i = 0; i < 64; i++) buf.writeBoolean(legal != null && i < legal.length && legal[i]);
+        ServerPlayNetworking.send(player, HIGHLIGHTS, buf);
     }
 
     public static void broadcastAnimation(ServerWorld world, BlockPos pos, String animation) {
