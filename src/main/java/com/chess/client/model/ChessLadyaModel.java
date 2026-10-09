@@ -21,7 +21,7 @@ public class ChessLadyaModel extends GeoModel<ChessFigureBlockEntity> {
     public Identifier getTextureResource(ChessFigureBlockEntity entity) {
         ChessPieceType piece = piece(entity);
         String side = piece.isWhite() ? "white" : "black";
-        return ChessMod.id("textures/figures/" + side + "_figures/" + side + "_" + piece.model() + ".png");
+        return ChessMod.id("textures/generated/figures/" + side + "_" + piece.model() + ".png");
     }
 
     @Override
