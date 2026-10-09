@@ -339,6 +339,14 @@ public final class ChessGameManager {
         public boolean whiteLeftRookMoved, whiteRightRookMoved, blackLeftRookMoved, blackRightRookMoved;
         public int enPassantRow = -1, enPassantCol = -1;
         public PendingMove pending;
+        public boolean threeDimensional;
+        public boolean promotionPending, promotionWhite;
+        public int promotionRow = -1, promotionCol = -1;
+        public UUID promotionPlayerId;
+        public BlockPos whiteCaptureOrigin, blackCaptureOrigin;
+        public final List<Character> whiteCapturedPieces = new ArrayList<>();
+        public final List<Character> blackCapturedPieces = new ArrayList<>();
+        public final Map<UUID, Integer> selected3DPieces = new HashMap<>();
         public final Map<String, BlockPos> teleportTargets = new HashMap<>();
     }
 
@@ -348,15 +356,17 @@ public final class ChessGameManager {
         public final ChessPieceType type;
         public final int fr, fc, tr, tc;
         public final float movingYaw, rookYaw;
+        public final char capturedSymbol;
         public final long executeAt;
         public final UUID playerId;
         PendingMove(BlockPos from, BlockPos to, BlockState movingState, BlockPos enPassantCapture,
                     BlockPos rookFrom, BlockPos rookTo, BlockState rookState, ChessPieceType type,
-                    int fr, int fc, int tr, int tc, float movingYaw, float rookYaw, long executeAt, UUID playerId) {
+                    int fr, int fc, int tr, int tc, float movingYaw, float rookYaw, char capturedSymbol, long executeAt, UUID playerId) {
             this.from = from; this.to = to; this.movingState = movingState; this.enPassantCapture = enPassantCapture;
             this.rookFrom = rookFrom; this.rookTo = rookTo; this.rookState = rookState; this.type = type;
             this.fr = fr; this.fc = fc; this.tr = tr; this.tc = tc;
             this.movingYaw = movingYaw; this.rookYaw = rookYaw;
+            this.capturedSymbol = capturedSymbol;
             this.executeAt = executeAt; this.playerId = playerId;
         }
     }
