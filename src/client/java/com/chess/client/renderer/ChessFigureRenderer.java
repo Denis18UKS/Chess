@@ -7,6 +7,7 @@ import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.RotationAxis;
+import net.minecraft.util.math.Vec3d;
 import software.bernie.geckolib.cache.object.BakedGeoModel;
 import software.bernie.geckolib.renderer.GeoBlockRenderer;
 
@@ -22,9 +23,10 @@ public class ChessFigureRenderer extends GeoBlockRenderer<ChessFigureBlockEntity
         super.preRender(matrices, entity, model, bufferSource, buffer, isReRender,
             tickDelta, light, overlay, red, green, blue, alpha);
 
-        // GeoBlockRenderer centers the model at (0.5, 0, 0.5) later in its render
-        // pass. Conjugate the rotation around that center and lower the visual
-        // model 14/16 block so its base sits on top of the 2px tile.
+        // Interpolate along the real server-provided destination, not mirrored directional clips.
+        Vec3d offset = entity.getRenderOffset(tickDelta);
+        matrices.translate(offset.x, offset.y, offset.z);
+        // Rotate around the figure center and seat the visual model on the 2px tile.
         matrices.translate(0.5, -0.875, 0.5);
         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(entity.getYawDegrees()));
         matrices.translate(-0.5, 0.0, -0.5);
