@@ -121,6 +121,174 @@ public final class ChessGameManager {
         broadcast(world, "Режим правил: " + mode.name().toLowerCase() + ".");
     }
 
+    public static void setViewMode(ServerWorld world, boolean threeDimensional) {
+        BoardState state = board(world);
+        state.threeDimensional = threeDimensional;
+        state.selected3DPieces.clear();
+        broadcast(world, threeDimensional ? "Режим 3D включён." : "Режим 2D включён.");
+        ChessNetwork.broadcastBoard(world);
+    }
+
+    public static boolean switchDevTeam(ServerPlayerEntity player) {
+        if (!player.getCommandTags().contains("chess_dev")) return false;
+        MinecraftServer server = player.getServer();
+        if (server == null) return false;
+        var scoreboard = server.getScoreboard();
+        var oldTeam = player.getScoreboardTeam();
+        String nextName = oldTeam != null && oldTeam.getName().equals("white") ? "black" : "white";
+        Team team = scoreboard.getTeam(nextName);
+        if (team == null) {
+            team = scoreboard.addTeam(nextName);
+            team.setColor(nextName.equals("white") ? Formatting.WHITE : Formatting.DARK_GRAY);
+        }
+        scoreboard.addPlayerToTeam(player.getEntityName(), team);
+        player.sendMessage(Text.literal("DEV: теперь вы за команду " + nextName + "."), false);
+        ChessNetwork.sendBoard(player);
+        return true;
+    }
+
+    public static void autoConfigureCaptures(ServerWorld world) {
+        autoConfigureCaptures(world, board(world));
+        broadcast(world, "Поле срубленных фигур настроено автоматически.");
+    }
+
+    private static void autoConfigureCaptures(ServerWorld world, BoardState state) {
+        if (!state.configured) return;
+        state.whiteCaptureOrigin = state.origin.add(0, 0, -3);
+        state.blackCaptureOrigin = state.origin.add(0, 0, 10);
+        for (int row = 0; row < 2; row++) for (int col = 0; col < 8; col++) {
+            BlockPos whiteTile = state.whiteCaptureOrigin.add(col, 0, row);
+            BlockPos blackTile = state.blackCaptureOrigin.add(col, 0, row);
+            if (isAirOrChessTile(world.getBlockState(whiteTile)))
+                world.setBlockState(whiteTile, ((row + col) % 2 == 0 ? ModBlocks.CHESS_WHITE_SQUARE : ModBlocks.CHESS_BLACK_SQUARE).getDefaultState(), 3);
+            if (isAirOrChessTile(world.getBlockState(blackTile)))
+                world.setBlockState(blackTile, ((row + col) % 2 == 0 ? ModBlocks.CHESS_WHITE_SQUARE : ModBlocks.CHESS_BLACK_SQUARE).getDefaultState(), 3);
+        }
+        for (int i = 0; i < state.whiteCapturedPieces.size(); i++)
+            placeCapturedBlock(world, state.whiteCaptureOrigin, i, state.whiteCapturedPieces.get(i));
+        for (int i = 0; i < state.blackCapturedPieces.size(); i++)
+            placeCapturedBlock(world, state.blackCaptureOrigin, i, state.blackCapturedPieces.get(i));
+    }
+
+    private static boolean isAirOrChessTile(BlockState state) {
+        return state.isAir() || state.isOf(ModBlocks.CHESS_WHITE_SQUARE) || state.isOf(ModBlocks.CHESS_BLACK_SQUARE);
+    }
+
+    private static void placeCapturedBlock(ServerWorld world, BlockPos tray, int index, char symbol) {
+        ChessPieceType type = ChessPieceType.fromSymbol(symbol);
+        if (type == null || tray == null || index >= 16) return;
+        world.setBlockState(tray.add(index % 8, 1, index / 8), type.block().getDefaultState(), 3);
+    }
+
+    private static void registerCapturedPiece(ServerWorld world, BoardState state, char symbol, boolean capturerWhite) {
+        if (ChessPieceType.fromSymbol(symbol) == null) return;
+        List<Character> pieces = capturerWhite ? state.whiteCapturedPieces : state.blackCapturedPieces;
+        if (pieces.size() >= 16) return;
+        pieces.add(symbol);
+        if (state.whiteCaptureOrigin == null || state.blackCaptureOrigin == null) autoConfigureCaptures(world, state);
+        placeCapturedBlock(world, capturerWhite ? state.whiteCaptureOrigin : state.blackCaptureOrigin, pieces.size() - 1, symbol);
+    }
+
+    public static String promotionOptions(BoardState state, boolean white) {
+        List<Character> captured = white ? state.whiteCapturedPieces : state.blackCapturedPieces;
+        StringBuilder result = new StringBuilder();
+        for (char capturedSymbol : captured) {
+            char kind = Character.toUpperCase(capturedSymbol);
+            if ("QRBN".indexOf(kind) >= 0 && result.indexOf(String.valueOf(kind)) < 0) result.append(kind);
+        }
+        return result.length() == 0 ? "QRBN" : result.toString();
+    }
+
+    public static void choosePromotion(ServerPlayerEntity player, String choice) {
+        ServerWorld world = player.getServerWorld();
+        BoardState state = board(world);
+        if (!state.promotionPending || choice == null || choice.isEmpty()) return;
+        if (state.promotionPlayerId != null && !state.promotionPlayerId.equals(player.getUuid())) {
+            tell(player, "Превращение выбирает игрок, который сделал этот ход.");
+            return;
+        }
+        char kind = Character.toUpperCase(choice.charAt(0));
+        if ("QRBN".indexOf(kind) < 0 || !promotionOptions(state, state.promotionWhite).contains(String.valueOf(kind))) {
+            tell(player, "Эта фигура недоступна для превращения.");
+            return;
+        }
+        char symbol = state.promotionWhite ? kind : Character.toLowerCase(kind);
+        BlockPos pos = piecePos(state, state.promotionRow, state.promotionCol);
+        float yaw = world.getBlockEntity(pos) instanceof ChessFigureBlockEntity entity ? entity.getYawDegrees() : 0.0f;
+        ChessPieceType promoted = ChessPieceType.fromSymbol(symbol);
+        if (promoted == null) return;
+        world.setBlockState(pos, promoted.block().getDefaultState(), 3);
+        if (world.getBlockEntity(pos) instanceof ChessFigureBlockEntity entity) entity.setYawDegrees(yaw);
+        state.promotionPending = false;
+        state.promotionPlayerId = null;
+        if (state.ruleMode != RuleMode.NO_REALISM || state.threeDimensional) state.whiteTurn = !state.whiteTurn;
+        updateTeamHighlights(world.getServer(), state);
+        announceTurn(world, state);
+        if (state.ruleMode != RuleMode.NO_REALISM || state.threeDimensional) checkEndCondition(world, state);
+        world.playSound(null, pos, SoundEvents.BLOCK_NOTE_BLOCK_PLING, SoundCategory.PLAYERS, 0.85f, 1.4f);
+        ChessNetwork.broadcastBoard(world);
+    }
+
+    public static void select3DPiece(ServerPlayerEntity player, BlockPos clicked) {
+        ServerWorld world = player.getServerWorld();
+        BoardState state = board(world);
+        if (!state.threeDimensional || !state.configured || !state.running || state.paused
+            || state.pending != null || state.promotionPending) return;
+        int row = clicked.getZ() - state.origin.getZ();
+        int col = clicked.getX() - state.origin.getX();
+        if (!inside(row, col) || clicked.getY() != state.origin.getY() + 1) return;
+        char[][] cells = readBoard(world);
+        char piece = cells[row][col];
+        ChessPieceType type = ChessPieceType.fromSymbol(piece);
+        if (type == null) return;
+        if (state.ruleMode != RuleMode.NO_REALISM && type.isWhite() != state.whiteTurn) {
+            tell(player, "Сейчас ход " + (state.whiteTurn ? "белых" : "чёрных") + ".");
+            return;
+        }
+        var team = player.getScoreboardTeam();
+        if (team != null && (team.getName().equals("white") || team.getName().equals("black"))
+            && type.isWhite() != team.getName().equals("white")) {
+            tell(player, "Выберите фигуру своей команды.");
+            return;
+        }
+        int selected = row * 8 + col;
+        Integer current = state.selected3DPieces.get(player.getUuid());
+        if (current != null && current == selected) {
+            state.selected3DPieces.remove(player.getUuid());
+            ChessNetwork.sendHighlights(player, BlockPos.ORIGIN, -1, -1, new boolean[64]);
+            return;
+        }
+        state.selected3DPieces.put(player.getUuid(), selected);
+        boolean[] legal = new boolean[64];
+        for (int tr = 0; tr < 8; tr++) for (int tc = 0; tc < 8; tc++) {
+            legal[tr * 8 + tc] = ChessRules.isLegalMove(cells, row, col, tr, tc, true,
+                state.enPassantRow, state.enPassantCol,
+                type.isWhite() ? state.whiteKingMoved : state.blackKingMoved,
+                type.isWhite() ? state.whiteLeftRookMoved : state.blackLeftRookMoved,
+                type.isWhite() ? state.whiteRightRookMoved : state.blackRightRookMoved);
+        }
+        ChessNetwork.sendHighlights(player, clicked, row, col, legal);
+    }
+
+    public static void moveSelected3D(ServerPlayerEntity player, BlockPos clicked) {
+        ServerWorld world = player.getServerWorld();
+        BoardState state = board(world);
+        if (!state.threeDimensional || !state.configured || state.promotionPending) return;
+        Integer selected = state.selected3DPieces.get(player.getUuid());
+        if (selected == null) return;
+        int row = clicked.getZ() - state.origin.getZ();
+        int col = clicked.getX() - state.origin.getX();
+        if (!inside(row, col)) return;
+        int fromRow = selected / 8, fromCol = selected % 8;
+        char moving = readBoard(world)[fromRow][fromCol];
+        char target = readBoard(world)[row][col];
+        if (target != '.' && moving != '.' && Character.isUpperCase(target) == Character.isUpperCase(moving)) {
+            select3DPiece(player, piecePos(state, row, col));
+            return;
+        }
+        tryMove(player, fromRow, fromCol, row, col);
+    }
+
     public static void setMatchMode(ServerWorld world, MatchMode mode) {
         BoardState state = board(world);
         state.matchMode = mode;
