@@ -166,7 +166,7 @@ public final class ChessGameManager {
             tell(player, "Нельзя взять собственную фигуру."); return;
         }
 
-        Team team = player.getScoreboardTeam();
+        net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
         if (team != null && (team.getName().equals("white") || team.getName().equals("black"))) {
             boolean playerWhite = team.getName().equals("white");
             if (playerWhite != type.isWhite()) { tell(player, "Выберите фигуру своей команды."); return; }
