@@ -44,16 +44,16 @@ public final class ChessWorldHighlights {
         VertexConsumer fill = consumers.getBuffer(RenderLayer.getDebugFilledBox());
         char moving = ChessBoardScreen.cellAt(selectedRow, selectedCol);
         for (int row = 0; row < 8; row++) for (int col = 0; col < 8; col++) {
-            if (!legal[row * 8 + col]) continue;
-            char target = ChessBoardScreen.cellAt(row, col);
-            boolean capture = target != '.' && Character.isUpperCase(target) != Character.isUpperCase(moving);
-            float red = capture ? 1.0f : 0.34f;
-            float green = capture ? 0.08f : 1.0f;
-            float blue = capture ? 0.08f : 0.12f;
+            boolean canMove = legal[row * 8 + col];
+            // Every cell is explicitly marked: lime means legal, red means forbidden.
+            float red = canMove ? 0.30f : 1.0f;
+            float green = canMove ? 1.0f : 0.06f;
+            float blue = canMove ? 0.10f : 0.06f;
+            float alpha = canMove ? 0.40f : 0.16f;
             Box cell = new Box(origin.getX() + col + 0.04, origin.getY() + 0.127, origin.getZ() + row + 0.04,
                 origin.getX() + col + 0.96, origin.getY() + 0.152, origin.getZ() + row + 0.96)
                 .offset(-camera.x, -camera.y, -camera.z);
-            WorldRenderer.drawBox(matrices, fill, cell, red, green, blue, 0.42f);
+            WorldRenderer.drawBox(matrices, fill, cell, red, green, blue, alpha);
         }
         VertexConsumer lines = consumers.getBuffer(RenderLayer.getLines());
         Box selectedBox = new Box(selected.getX() + 0.08, origin.getY() + 0.125, selected.getZ() + 0.08,
