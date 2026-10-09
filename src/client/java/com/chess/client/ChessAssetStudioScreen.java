@@ -97,7 +97,7 @@ public class ChessAssetStudioScreen extends Screen {
             }
             String side = white ? "white" : "black";
             String piece = PIECES[pieceIndex];
-            Path target = packRoot().resolve("assets/chess/textures/figures/" + side + "_figures/" + side + "_" + piece + ".png");
+            Path target = packRoot().resolve("assets/chess/textures/generated/figures/" + side + "_" + piece + ".png");
             Files.createDirectories(target.getParent());
             Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
             activatePack();
