@@ -50,21 +50,4 @@ public final class ChessNetwork {
             ServerPlayNetworking.send(player, ANIMATE, buf);
         }
     }
-
-    public static void requestBoard() {
-        ServerlessSend.send(REQUEST_BOARD, PacketByteBufs.create());
-    }
-
-    public static void requestMove(int fr, int fc, int tr, int tc) {
-        PacketByteBuf buf = PacketByteBufs.create();
-        buf.writeInt(fr); buf.writeInt(fc); buf.writeInt(tr); buf.writeInt(tc);
-        ServerlessSend.send(MOVE, buf);
-    }
-
-    /** Client networking is referenced reflectively to keep this main-source class server-safe. */
-    private static final class ServerlessSend {
-        static void send(Identifier id, PacketByteBuf buf) {
-            net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(id, buf);
-        }
-    }
 }
