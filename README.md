@@ -18,7 +18,7 @@ Install the built `chess-1.1.0-1.20.1.jar` into `.minecraft/mods`. Multiplayer u
 ## Set up an arena
 
 1. Build an 8×8 flat board using the Chess white/black square blocks. Put the first (north-west) square at the corner you intend to use as the board origin.
-2. Hold **Chess Board Configurator** and right-click that first square. The board extends along positive X and positive Z; figure blocks occupy the block directly above each square.
+2. Hold **Chess Board Configurator** and right-click a support block to generate the 8×8 board one block above it. Right-click an existing Chess square to bind that square as the origin; sneak-right-click an existing Chess square to regenerate the pattern. The board extends along positive X and positive Z; figures occupy the block directly above each square.
 3. Place the figure blocks on the upper layer. There are separate white and black King, Queen (Ferz), Rook (Ladya), Bishop (El), Knight (Horse) and Pawn items.
 4. Use `/chessboard check` to count board tiles and figures. It checks for 64 registered Chess square blocks, not whether every square is physically arranged in the correct orientation.
 5. Use `/chess autoconfig` once to create the scoreboard teams, join a side, then start the match.
@@ -58,7 +58,7 @@ The piece sprites displayed in inventory are generated as separate 32×32 2D PNG
 - **TP Configurator**: ordinary right-click stores the caller's team destination; sneak-right-click teleports to the saved team destination.
 - **Graffiti Tool**: rename it in an anvil to define a label, then right-click; sneak-right-click cycles the stored scale from 0.5× to 3×.
 
-The current graffiti tool records text/position/scale data on the tool. A persistent world-surface hologram renderer/editor is not yet implemented in this branch.
+The graffiti tool creates a persistent vanilla Text Display entity with white text, fixed orientation and a horizontal transform. The entity is synced and saved by Minecraft; sneak-right-click cycles scale before placement.
 
 ## Build from source
 
@@ -79,7 +79,7 @@ The build generates the inventory icon PNGs, then creates the remapped mod JAR u
 ## Current limits
 
 - Board origin and match settings are stored in memory per dimension, not saved across server restarts.
-- The world-backed logical board is read from the blocks in a fixed 8×8 region; the board configurator does not automatically construct the tiles for you.
+- The world-backed logical board is read from the blocks in a fixed 8×8 region. The configurator can generate the tile pattern, but does not automatically arrange the figures.
 - Full-realism contains the core move/check rules listed above but does not yet implement all formal tournament draw rules, threefold repetition, the 50-move rule, chess clocks or draw offers.
 - The GeckoLib movement animation packet starts from the source figure; block relocation is delayed for an animation window. Fine adjustment of animation duration/axis against the supplied models still needs in-game verification.
 - The GUI displays 2D piece icons generated for the inventory sprites; the world figures remain GeckoLib 3D block entities.
