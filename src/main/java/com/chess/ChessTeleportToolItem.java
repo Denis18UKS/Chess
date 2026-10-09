@@ -16,7 +16,7 @@ public class ChessTeleportToolItem extends Item {
     public ActionResult useOnBlock(ItemUsageContext context) {
         if (!(context.getWorld() instanceof ServerWorld world) || !(context.getPlayer() instanceof ServerPlayerEntity player))
             return ActionResult.SUCCESS;
-        Team team = player.getScoreboardTeam();
+        net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
         boolean white = team == null || !team.getName().equals("black");
         if (player.isSneaking()) {
             BlockPos destination = ChessGameManager.teleportTarget(world, white);
