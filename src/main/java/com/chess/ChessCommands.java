@@ -24,6 +24,20 @@ public final class ChessCommands {
 
     private static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
         dispatcher.register(literal("chess")
+            .then(literal("2d").executes(ctx -> {
+                ChessGameManager.setViewMode(ctx.getSource().getWorld(), false);
+                ctx.getSource().sendFeedback(() -> Text.literal("Chess: 2D интерфейс"), false);
+                return 1;
+            }))
+            .then(literal("3d").executes(ctx -> {
+                ChessGameManager.setViewMode(ctx.getSource().getWorld(), true);
+                ctx.getSource().sendFeedback(() -> Text.literal("Chess: 3D режим мира"), false);
+                return 1;
+            }))
+            .then(literal("captures").then(literal("autoconfig").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
+                ChessGameManager.autoConfigureCaptures(ctx.getSource().getWorld());
+                return 1;
+            })))
             .then(literal("start").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
                 try {
                     ChessGameManager.start(ctx.getSource().getWorld());
@@ -91,6 +105,19 @@ public final class ChessCommands {
                 .then(literal("black").executes(ctx -> teleport(ctx.getSource(), false))))
             )
         );
+
+        dispatcher.register(literal("chessdev").executes(ctx -> {
+            ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
+            if (player.getCommandTags().contains("chess_dev")) {
+                player.removeCommandTag("chess_dev");
+                player.sendMessage(Text.literal("Режим разработчика выключен."), false);
+            } else {
+                player.addCommandTag("chess_dev");
+                player.sendMessage(Text.literal("Режим разработчика включён. Кейбинд смены команды активен."), false);
+            }
+            ChessNetwork.sendBoard(player);
+            return 1;
+        }));
 
         dispatcher.register(literal("chessboard").then(literal("check").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
             ServerPlayerEntity player = ctx.getSource().getPlayer();
