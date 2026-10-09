@@ -1,6 +1,6 @@
 package com.chess.client.renderer;
 
-import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.render.VertexConsumer;
 import com.chess.ChessFigureBlockEntity;
 import com.chess.client.model.ChessLadyaModel;
 import net.minecraft.client.render.VertexConsumerProvider;
