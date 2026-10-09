@@ -17,7 +17,7 @@ public class ChessFigureBlock extends BlockWithEntity {
     // Figure blocks are located one block above a 2px-high board tile.
     // Renderer moves only the visual model down to the tile surface; the
     // invisible block entity itself keeps the board's logical coordinates.
-    private static final VoxelShape OUTLINE = createCuboidShape(4, -14, 4, 12, 0, 12);
+    private static final VoxelShape OUTLINE = createCuboidShape(2, -14, 2, 14, 24, 14);
 
     public ChessFigureBlock(Settings settings) { super(settings.nonOpaque()); }
 
