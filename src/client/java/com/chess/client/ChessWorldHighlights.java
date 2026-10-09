@@ -40,7 +40,7 @@ public final class ChessWorldHighlights {
         BlockPos origin = ChessBoardScreen.getBoardOrigin();
         Vec3d camera = context.camera().getPos();
         MatrixStack matrices = context.matrixStack();
-        VertexConsumerProvider.Immediate consumers = context.consumers();
+        VertexConsumerProvider consumers = context.consumers();
         VertexConsumer fill = consumers.getBuffer(RenderLayer.getDebugFilledBox());
         char moving = ChessBoardScreen.cellAt(selectedRow, selectedCol);
         for (int row = 0; row < 8; row++) for (int col = 0; col < 8; col++) {
