@@ -122,7 +122,7 @@ public class ChessBoardScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button != 0) return super.mouseClicked(mouseX, mouseY, button);
-        int cell = Math.min(30, Math.min((width - 36) / 8, (height - 108) / 8));
+        int cell = Math.min(30, Math.min((width - 36) / 8, (height - 122) / 8));
         cell = Math.max(20, cell);
         int boardSize = cell * 8;
         int boardX = (width - boardSize) / 2;
@@ -132,12 +132,15 @@ public class ChessBoardScreen extends Screen {
             int row = (int)(mouseY - boardY) / cell;
             char selected = cells.charAt(row * 8 + col);
             if (fromRow < 0) {
-                if (selected != '.' && matchesHeldPiece(selected)) { fromRow = row; fromCol = col; toRow = toCol = -1; }
+                if (selected != '.' && matchesHeldPiece(selected)) {
+                    fromRow = row; fromCol = col; toRow = toCol = -1;
+                }
             } else if (row == fromRow && col == fromCol) {
-                fromRow = fromCol = toRow = toCol = -1;
-            } else if (selected != '.' && Character.isUpperCase(selected) == Character.isUpperCase(cells.charAt(fromRow * 8 + fromCol))) {
-                fromRow = row; fromCol = col; toRow = toCol = -1;
+                // The held inventory item already defines the selected source piece.
+                // Clicking it again only clears the destination.
+                toRow = toCol = -1;
             } else {
+                // Do not silently switch to a different figure: clicks now always choose a destination.
                 toRow = row; toCol = col;
             }
             return true;
