@@ -1,9 +1,16 @@
 # Build the Fabric 1.20.1 mod and publish reproducible workflow artifacts.
 name: build
-on: [pull_request, push]
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: chess-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
