@@ -2,6 +2,8 @@ package com.chess;
 
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.network.packet.s2c.play.BlockEntityUpdateS2CPacket;
 import net.minecraft.util.math.BlockPos;
 import software.bernie.geckolib.animatable.GeoBlockEntity;
 import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
@@ -14,9 +16,9 @@ import software.bernie.geckolib.util.GeckoLibUtil;
 
 public class ChessFigureBlockEntity extends BlockEntity implements GeoBlockEntity {
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
+    private RawAnimation pendingAnimation;
+    private float yawDegrees;
 
-    // Legacy key-handler constants retained for source compatibility. The new
-    // board UI no longer registers the old I/J/K/L control handler.
     public static final RawAnimation LADYA_FORWARD = RawAnimation.begin().thenPlay("ladya_1_forward");
     public static final RawAnimation LADYA_BACK = RawAnimation.begin().thenPlay("ladya_1_back");
     public static final RawAnimation LADYA_LEFT = RawAnimation.begin().thenPlay("ladya_1_left");
@@ -26,10 +28,40 @@ public class ChessFigureBlockEntity extends BlockEntity implements GeoBlockEntit
     public static final RawAnimation PESHKA_LEFT = RawAnimation.begin().thenPlay("hode_1");
     public static final RawAnimation PESHKA_RIGHT = RawAnimation.begin().thenPlay("hode_1");
 
-    private RawAnimation pendingAnimation;
-
     public ChessFigureBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.CHESS_FIGURE, pos, state);
+    }
+
+    public float getYawDegrees() { return yawDegrees; }
+
+    public void setYawDegrees(float yawDegrees) {
+        this.yawDegrees = (Math.round(yawDegrees / 90.0f) * 90.0f) % 360.0f;
+        markDirty();
+        if (world != null && !world.isClient) {
+            world.updateListeners(pos, getCachedState(), getCachedState(), 3);
+        }
+    }
+
+    @Override
+    protected void writeNbt(NbtCompound nbt) {
+        super.writeNbt(nbt);
+        nbt.putFloat("ChessYaw", yawDegrees);
+    }
+
+    @Override
+    public void readNbt(NbtCompound nbt) {
+        super.readNbt(nbt);
+        yawDegrees = nbt.contains("ChessYaw") ? nbt.getFloat("ChessYaw") : 0.0f;
+    }
+
+    @Override
+    public NbtCompound toInitialChunkDataNbt() {
+        return createNbt();
+    }
+
+    @Override
+    public BlockEntityUpdateS2CPacket toUpdatePacket() {
+        return BlockEntityUpdateS2CPacket.create(this);
     }
 
     @Override
@@ -51,7 +83,6 @@ public class ChessFigureBlockEntity extends BlockEntity implements GeoBlockEntit
         this.pendingAnimation = animation;
     }
 
-    /** Called by the client packet receiver for synchronized movement. */
     public void playAnimation(String animationName) {
         if (animationName != null && !animationName.isBlank()) {
             playAnimation(RawAnimation.begin().thenPlay(animationName));
