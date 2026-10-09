@@ -1,3 +1,8 @@
+import java.awt.Color
+import java.awt.Graphics2D
+import java.awt.RenderingHints
+import java.awt.image.BufferedImage
+
 plugins {
     id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
     id 'maven-publish'
@@ -57,12 +62,6 @@ publishing {
     repositories {}
 }
 
-/*
- * Icons are generated from Java2D so the project stays source-only and the
- * textures are always packaged in the built mod. No external image library
- * is required. The 3D texture atlas generator fills all missing white/black
- * figure variants while preserving the two original provided textures.
- */
 def generatedChessResources = layout.buildDirectory.dir("generated/chess-assets")
 sourceSets.main.resources.srcDir(generatedChessResources)
 
@@ -112,7 +111,7 @@ tasks.register("generateChessAssets") {
                         g.setColor(edge); g.drawPolygon([8, 23, 22, 19, 20, 15, 11, 8] as int[], [23, 23, 13, 8, 5, 9, 8, 15] as int[], 8)
                         g.fillRect(16, 11, 2, 2)
                         break
-                    default: // pawn
+                    default:
                         g.setColor(fill); g.fillRect(12, 13, 8, 10); g.fillOval(10, 6, 12, 12)
                         g.setColor(edge); g.drawRect(12, 13, 7, 9); g.drawOval(10, 6, 11, 11)
                 }
