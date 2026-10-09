@@ -45,6 +45,19 @@ public final class ChessGameManager {
         ), false));
     }
 
+    /** Builds an alternating 8x8 board at the supplied first tile coordinate. */
+    public static void buildBoard(ServerWorld world, BlockPos firstSquare) {
+        configureBoard(world, firstSquare);
+        for (int row = 0; row < 8; row++) {
+            for (int col = 0; col < 8; col++) {
+                BlockPos pos = firstSquare.add(col, 0, row);
+                boolean light = ((row + col) & 1) == 0;
+                world.setBlockState(pos, (light ? ModBlocks.CHESS_WHITE_SQUARE : ModBlocks.CHESS_BLACK_SQUARE).getDefaultState(), 3);
+            }
+        }
+        broadcast(world, "Создано шахматное поле 8×8. Фигуры размещаются на один блок выше клеток.");
+    }
+
     public static BlockPos piecePos(BoardState state, int row, int col) {
         return state.origin.add(col, 1, row);
     }
@@ -112,7 +125,7 @@ public final class ChessGameManager {
 
     public static boolean transferTurn(ServerWorld world) {
         BoardState state = board(world);
-        if (!state.running || state.pending != null) return false;
+        if (!state.running || state.paused || state.pending != null) return false;
         state.whiteTurn = !state.whiteTurn;
         updateTeamHighlights(world.getServer(), state);
         broadcast(world, "Ход передан команде " + (state.whiteTurn ? "white" : "black") + ".");
@@ -162,6 +175,9 @@ public final class ChessGameManager {
         char moving = cells[fr][fc], target = cells[tr][tc];
         ChessPieceType type = ChessPieceType.fromSymbol(moving);
         if (type == null) { tell(player, "На выбранной клетке нет фигуры."); return; }
+        if (target != '.' && Character.toUpperCase(target) == 'K') {
+            tell(player, "Король не снимается: партия должна завершиться матом."); return;
+        }
         if (target != '.' && Character.isUpperCase(target) == Character.isUpperCase(moving)) {
             tell(player, "Нельзя взять собственную фигуру."); return;
         }
@@ -199,12 +215,14 @@ public final class ChessGameManager {
         BlockState rookState = castle ? world.getBlockState(rookFrom) : Blocks.AIR.getDefaultState();
 
         String animation = animationFor(type, tr - fr, tc - fc);
+        int animationTicks = animation.startsWith("horse") || "hode_2".equals(animation) ? 40
+            : "hode_1".equals(animation) ? 20 : 30;
         ChessNetwork.broadcastAnimation(world, from, animation);
         if (castle && ChessPieceType.fromBlock(rookState) != null) {
             ChessNetwork.broadcastAnimation(world, rookFrom, animationFor(ChessPieceType.fromBlock(rookState), 0, tc > fc ? 1 : -1));
         }
         state.pending = new PendingMove(from, to, movingState, epCapture, rookFrom, rookTo, rookState,
-            type, fr, fc, tr, tc, serverTick(world.getServer()) + 24, player.getUuid());
+            type, fr, fc, tr, tc, serverTick(world.getServer()) + animationTicks, player.getUuid());
         state.enPassantRow = Character.toUpperCase(moving) == 'P' && Math.abs(tr - fr) == 2 ? (tr + fr) / 2 : -1;
         state.enPassantCol = state.enPassantRow < 0 ? -1 : fc;
         updateMovedFlags(state, type, fr, fc);
