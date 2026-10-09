@@ -439,7 +439,7 @@ public final class ChessGameManager {
                 || (move.type == ChessPieceType.BLACK_PAWN && move.tr == 7);
             if (move.capturedSymbol != '.') {
                 registerCapturedPiece(world, state, move.capturedSymbol, move.type.isWhite());
-                world.playSound(null, move.to, SoundEvents.ENTITY_PLAYER_ATTACK_STRONG.value(), SoundCategory.PLAYERS, 0.9f, 1.05f);
+                world.playSound(null, move.to, SoundEvents.ENTITY_PLAYER_ATTACK_STRONG, SoundCategory.PLAYERS, 0.9f, 1.05f);
             }
 
             // Leave a pawn on the back rank until its owner chooses the replacement.
@@ -491,8 +491,8 @@ public final class ChessGameManager {
             state.running = false;
             if (inCheck) {
                 broadcast(world, "Мат! Победа " + (whiteToMove ? "чёрных" : "белых") + ".");
-                notifyCheckTeam(world, whiteToMove, "ШАХ И МАТ", SoundEvents.ENTITY_VILLAGER_NO.value());
-                notifyCheckTeam(world, !whiteToMove, "ПОБЕДА", SoundEvents.UI_TOAST_CHALLENGE_COMPLETE.value());
+                notifyCheckTeam(world, whiteToMove, "ШАХ И МАТ", SoundEvents.ENTITY_VILLAGER_NO);
+                notifyCheckTeam(world, !whiteToMove, "ПОБЕДА", SoundEvents.UI_TOAST_CHALLENGE_COMPLETE);
             } else {
                 broadcast(world, "Пат. Ничья.");
                 for (ServerPlayerEntity player : world.getPlayers())
