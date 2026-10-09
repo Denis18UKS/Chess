@@ -15,6 +15,7 @@ public final class ChessNetwork {
     public static final Identifier BOARD_STATE = ChessMod.id("board_state");
     public static final Identifier MOVE = ChessMod.id("move");
     public static final Identifier ANIMATE = ChessMod.id("animate_piece");
+    public static final Identifier GRAFFITI_CREATE = ChessMod.id("graffiti_create");
 
     private ChessNetwork() {}
 
@@ -24,6 +25,19 @@ public final class ChessNetwork {
         ServerPlayNetworking.registerGlobalReceiver(MOVE, (server, player, handler, buf, responseSender) -> {
             int fr = buf.readInt(), fc = buf.readInt(), tr = buf.readInt(), tc = buf.readInt();
             server.execute(() -> ChessGameManager.tryMove(player, fr, fc, tr, tc));
+        });
+        ServerPlayNetworking.registerGlobalReceiver(GRAFFITI_CREATE, (server, player, handler, buf, responseSender) -> {
+            BlockPos pos = buf.readBlockPos();
+            String text = buf.readString(256);
+            float scale = buf.readFloat();
+            int rgb = buf.readInt();
+            float yaw = buf.readFloat();
+            server.execute(() -> {
+                boolean hasTool = player.getMainHandStack().isOf(ModItems.CHESS_GRAFFITI_TOOL)
+                    || player.getOffHandStack().isOf(ModItems.CHESS_GRAFFITI_TOOL);
+                if (!hasTool || player.squaredDistanceTo(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > 64.0) return;
+                ChessGraffitiToolItem.placeText(player, pos, text, scale, rgb, yaw);
+            });
         });
     }
 
