@@ -1,6 +1,6 @@
 {
   "parent": "minecraft:item/generated",
   "textures": {
-    "layer0": "chess:figures/white_figures/white_ladya"
+    "layer0": "chess:item/chess_white_ladya"
   }
 }
