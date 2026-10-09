@@ -130,8 +130,7 @@ tasks.register("generateChessAssets") {
                 for (int i = 8; i < size; i += 16) {
                     tg.drawLine(1, i, size - 2, i)
                 }
-                tg.setColor(edge)
-                tg.drawRect(0, 0, size - 1, size - 1)
+                // Avoid dark atlas borders bleeding into model UV faces.
                 tg.dispose()
                 javax.imageio.ImageIO.write(atlas, "png", texture)
             }
