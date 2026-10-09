@@ -166,41 +166,29 @@ tasks.register("generateChessAssets") {
             }
         }
 
-        // Correct, non-missing chessboard tile textures. Top faces use the 16x16
-        // upper-left area; thin vertical sides use the narrow 16x2 strip at y=16.
+        // Correct 16x16 tile textures in normal Minecraft block-model UV units.
         ["white", "black"].each { side ->
             boolean lightTile = side == "white"
             Color wood = lightTile ? new Color(223, 203, 164) : new Color(92, 57, 38)
             Color border = lightTile ? new Color(148, 118, 79) : new Color(47, 30, 24)
-            BufferedImage tile = new BufferedImage(16, 32, BufferedImage.TYPE_INT_ARGB)
-            for (int y = 0; y < 32; y++) {
+            BufferedImage tile = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB)
+            for (int y = 0; y < 16; y++) {
                 for (int x = 0; x < 16; x++) {
-                    Color color
-                    if (y < 16) {
-                        int grain = ((x * 13 + y * 7 + (lightTile ? 3 : 11)) % 7) - 3
-                        int edge = (x == 0 || x == 15 || y == 0 || y == 15) ? -14 : 0
-                        color = new Color(
-                            Math.max(0, Math.min(255, wood.getRed() + grain + edge)),
-                            Math.max(0, Math.min(255, wood.getGreen() + grain + edge)),
-                            Math.max(0, Math.min(255, wood.getBlue() + grain + edge))
-                        )
-                        if (y == 5 || y == 11) color = new Color(
-                            Math.max(0, color.getRed() - 4), Math.max(0, color.getGreen() - 4), Math.max(0, color.getBlue() - 4))
-                    } else {
-                        int sideShade = y < 18 ? -30 : -20
-                        color = new Color(
-                            Math.max(0, wood.getRed() + sideShade),
-                            Math.max(0, wood.getGreen() + sideShade),
-                            Math.max(0, wood.getBlue() + sideShade))
-                    }
+                    int grain = ((x * 13 + y * 7 + (lightTile ? 3 : 11)) % 7) - 3
+                    int edge = (x == 0 || x == 15 || y == 0 || y == 15) ? -14 : 0
+                    Color color = new Color(
+                        Math.max(0, Math.min(255, wood.getRed() + grain + edge)),
+                        Math.max(0, Math.min(255, wood.getGreen() + grain + edge)),
+                        Math.max(0, Math.min(255, wood.getBlue() + grain + edge))
+                    )
+                    if (y == 5 || y == 11) color = new Color(
+                        Math.max(0, color.getRed() - 4), Math.max(0, color.getGreen() - 4), Math.max(0, color.getBlue() - 4))
                     tile.setRGB(x, y, color.getRGB())
                 }
             }
             Graphics2D boardGraphics = tile.createGraphics()
             boardGraphics.setColor(border)
-            boardGraphics.drawLine(0, 0, 15, 0)
-            boardGraphics.drawLine(0, 15, 15, 15)
-            boardGraphics.drawLine(0, 16, 15, 16)
+            boardGraphics.drawRect(0, 0, 15, 15)
             boardGraphics.dispose()
             File boardTexture = new File(root, "assets/chess/textures/block/chess_${side}_square.png")
             boardTexture.parentFile.mkdirs()
