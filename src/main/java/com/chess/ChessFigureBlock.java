@@ -5,136 +5,50 @@ import net.minecraft.block.BlockState;
 import net.minecraft.block.BlockWithEntity;
 import net.minecraft.block.ShapeContext;
 import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.item.ItemStack;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.shape.VoxelShape;
-import net.minecraft.util.shape.VoxelShapes;
 import net.minecraft.world.BlockView;
+import net.minecraft.world.World;
 
 public class ChessFigureBlock extends BlockWithEntity {
+    // Figure blocks are located one block above a 2px-high board tile.
+    // Renderer moves only the visual model down to the tile surface; the
+    // invisible block entity itself keeps the board's logical coordinates.
+    private static final VoxelShape OUTLINE = createCuboidShape(4, 2, 4, 12, 16, 12);
 
-    // ============================================================
-    // ФОРМА ЛАДЬИ
-    // ============================================================
-
-    private static final VoxelShape LADYA_SHAPE = VoxelShapes.union(
-            // Нижняя платформа: 6 x 2 x 6
-            VoxelShapes.cuboid(
-                    5.0 / 16.0, 0.0 / 16.0, 5.0 / 16.0,
-                    11.0 / 16.0, 2.0 / 16.0, 11.0 / 16.0
-            ),
-
-            // Центральный корпус: 4 x 6 x 4
-            VoxelShapes.cuboid(
-                    6.0 / 16.0, 2.0 / 16.0, 6.0 / 16.0,
-                    10.0 / 16.0, 8.0 / 16.0, 10.0 / 16.0
-            ),
-
-            // Верхняя площадка: 6 x 1 x 6
-            VoxelShapes.cuboid(
-                    5.0 / 16.0, 8.0 / 16.0, 5.0 / 16.0,
-                    11.0 / 16.0, 9.0 / 16.0, 11.0 / 16.0
-            ),
-
-            // Левая стенка сверху
-            VoxelShapes.cuboid(
-                    5.0 / 16.0, 9.0 / 16.0, 5.0 / 16.0,
-                    6.0 / 16.0, 11.0 / 16.0, 11.0 / 16.0
-            ),
-
-            // Правая стенка сверху
-            VoxelShapes.cuboid(
-                    10.0 / 16.0, 9.0 / 16.0, 5.0 / 16.0,
-                    11.0 / 16.0, 11.0 / 16.0, 11.0 / 16.0
-            ),
-
-            // Передняя стенка сверху
-            VoxelShapes.cuboid(
-                    6.0 / 16.0, 9.0 / 16.0, 5.0 / 16.0,
-                    10.0 / 16.0, 11.0 / 16.0, 6.0 / 16.0
-            ),
-
-            // Задняя стенка сверху
-            VoxelShapes.cuboid(
-                    6.0 / 16.0, 9.0 / 16.0, 10.0 / 16.0,
-                    10.0 / 16.0, 11.0 / 16.0, 11.0 / 16.0
-            )
-    );
-
-    // ============================================================
-    // ФОРМА ПЕШКИ
-    // ============================================================
-
-    private static final VoxelShape PESHKA_SHAPE = VoxelShapes.union(
-            // Нижняя платформа: 6 x 2 x 6
-            VoxelShapes.cuboid(
-                    5.0 / 16.0, 0.0 / 16.0, 5.0 / 16.0,
-                    11.0 / 16.0, 2.0 / 16.0, 11.0 / 16.0
-            ),
-
-            // Центральная часть: 4 x 4 x 4
-            VoxelShapes.cuboid(
-                    6.0 / 16.0, 2.0 / 16.0, 6.0 / 16.0,
-                    10.0 / 16.0, 6.0 / 16.0, 10.0 / 16.0
-            ),
-
-            // Верхняя платформа: 6 x 2 x 6
-            VoxelShapes.cuboid(
-                    5.0 / 16.0, 6.0 / 16.0, 5.0 / 16.0,
-                    11.0 / 16.0, 8.0 / 16.0, 11.0 / 16.0
-            ),
-
-            // Верхушка: 4 x 2 x 4
-            VoxelShapes.cuboid(
-                    6.0 / 16.0, 8.0 / 16.0, 6.0 / 16.0,
-                    10.0 / 16.0, 10.0 / 16.0, 10.0 / 16.0
-            )
-    );
-
-    public ChessFigureBlock(Settings settings) {
-        super(settings);
-    }
+    public ChessFigureBlock(Settings settings) { super(settings.nonOpaque()); }
 
     @Override
-    public BlockEntity createBlockEntity(
-            BlockPos pos,
-            BlockState state
-    ) {
+    public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
         return new ChessFigureBlockEntity(pos, state);
     }
 
-    // Фигуру полностью рисует GeckoLib.
     @Override
     public BlockRenderType getRenderType(BlockState state) {
         return BlockRenderType.ENTITYBLOCK_ANIMATED;
     }
 
-    // Форма подсветки блока при наведении.
     @Override
-    public VoxelShape getOutlineShape(
-            BlockState state,
-            BlockView world,
-            BlockPos pos,
-            ShapeContext context
-    ) {
-        return getFigureShape(state);
-    }
-
-    // Физическая collision-форма.
-    @Override
-    public VoxelShape getCollisionShape(
-            BlockState state,
-            BlockView world,
-            BlockPos pos,
-            ShapeContext context
-    ) {
-        return getFigureShape(state);
-    }
-
-    private VoxelShape getFigureShape(BlockState state) {
-        if (state.isOf(ModBlocks.CHESS_WHITE_PESHKA)) {
-            return PESHKA_SHAPE;
+    public void onPlaced(World world, BlockPos pos, BlockState state, LivingEntity placer, ItemStack stack) {
+        super.onPlaced(world, pos, state, placer, stack);
+        if (!world.isClient && placer != null && world.getBlockEntity(pos) instanceof ChessFigureBlockEntity figure) {
+            float yaw = MathHelper.floor((placer.getYaw() * 4.0f / 360.0f) + 0.5f) * 90.0f + 180.0f;
+            figure.setYawDegrees(yaw);
         }
+    }
 
-        return LADYA_SHAPE;
+    @Override
+    public VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+        return OUTLINE;
+    }
+
+    @Override
+    public VoxelShape getCollisionShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+        // The figure is visual scenery; do not leave an invisible full-block
+        // collision box floating above a board that is only two pixels high.
+        return net.minecraft.util.shape.VoxelShapes.empty();
     }
 }
