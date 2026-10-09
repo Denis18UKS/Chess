@@ -214,6 +214,10 @@ public final class ChessGameManager {
         BlockPos rookTo = castle ? piecePos(state, fr, tc > fc ? 5 : 3) : null;
         BlockState rookState = castle ? world.getBlockState(rookFrom) : Blocks.AIR.getDefaultState();
 
+        float movingYaw = world.getBlockEntity(from) instanceof ChessFigureBlockEntity movingEntity
+            ? movingEntity.getYawDegrees() : 0.0f;
+        float rookYaw = castle && world.getBlockEntity(rookFrom) instanceof ChessFigureBlockEntity rookEntity
+            ? rookEntity.getYawDegrees() : 0.0f;
         String animation = animationFor(type, tr - fr, tc - fc);
         int animationTicks = animation.startsWith("horse") || "hode_2".equals(animation) ? 40
             : "hode_1".equals(animation) ? 20 : 30;
@@ -222,7 +226,7 @@ public final class ChessGameManager {
             ChessNetwork.broadcastAnimation(world, rookFrom, animationFor(ChessPieceType.fromBlock(rookState), 0, tc > fc ? 1 : -1));
         }
         state.pending = new PendingMove(from, to, movingState, epCapture, rookFrom, rookTo, rookState,
-            type, fr, fc, tr, tc, serverTick(world.getServer()) + animationTicks, player.getUuid());
+            type, fr, fc, tr, tc, movingYaw, rookYaw, serverTick(world.getServer()) + animationTicks, player.getUuid());
         state.enPassantRow = Character.toUpperCase(moving) == 'P' && Math.abs(tr - fr) == 2 ? (tr + fr) / 2 : -1;
         state.enPassantCol = state.enPassantRow < 0 ? -1 : fc;
         updateMovedFlags(state, type, fr, fc);
@@ -255,14 +259,20 @@ public final class ChessGameManager {
                 continue;
             }
             BlockState targetState = move.movingState;
-            if (move.type == ChessPieceType.WHITE_PAWN && move.to.getZ() == state.origin.getZ()) targetState = ModBlocks.CHESS_WHITE_FERZ.getDefaultState();
-            if (move.type == ChessPieceType.BLACK_PAWN && move.to.getZ() == state.origin.getZ() + 7) targetState = ModBlocks.CHESS_BLACK_FERZ.getDefaultState();
+            if (move.type == ChessPieceType.WHITE_PAWN && move.tr == 0) targetState = ModBlocks.CHESS_WHITE_FERZ.getDefaultState();
+            if (move.type == ChessPieceType.BLACK_PAWN && move.tr == 7) targetState = ModBlocks.CHESS_BLACK_FERZ.getDefaultState();
 
             world.setBlockState(move.to, targetState);
+            if (world.getBlockEntity(move.to) instanceof ChessFigureBlockEntity movedEntity) {
+                movedEntity.setYawDegrees(move.movingYaw);
+            }
             world.setBlockState(move.from, Blocks.AIR.getDefaultState(), 3);
             if (move.enPassantCapture != null) world.setBlockState(move.enPassantCapture, Blocks.AIR.getDefaultState(), 3);
             if (move.rookFrom != null && ChessPieceType.fromBlock(move.rookState) != null) {
                 world.setBlockState(move.rookTo, move.rookState);
+                if (world.getBlockEntity(move.rookTo) instanceof ChessFigureBlockEntity movedRook) {
+                    movedRook.setYawDegrees(move.rookYaw);
+                }
                 world.setBlockState(move.rookFrom, Blocks.AIR.getDefaultState(), 3);
             }
             state.pending = null;
@@ -362,14 +372,17 @@ public final class ChessGameManager {
         public final BlockState movingState, rookState;
         public final ChessPieceType type;
         public final int fr, fc, tr, tc;
+        public final float movingYaw, rookYaw;
         public final long executeAt;
         public final UUID playerId;
         PendingMove(BlockPos from, BlockPos to, BlockState movingState, BlockPos enPassantCapture,
                     BlockPos rookFrom, BlockPos rookTo, BlockState rookState, ChessPieceType type,
-                    int fr, int fc, int tr, int tc, long executeAt, UUID playerId) {
+                    int fr, int fc, int tr, int tc, float movingYaw, float rookYaw, long executeAt, UUID playerId) {
             this.from = from; this.to = to; this.movingState = movingState; this.enPassantCapture = enPassantCapture;
             this.rookFrom = rookFrom; this.rookTo = rookTo; this.rookState = rookState; this.type = type;
-            this.fr = fr; this.fc = fc; this.tr = tr; this.tc = tc; this.executeAt = executeAt; this.playerId = playerId;
+            this.fr = fr; this.fc = fc; this.tr = tr; this.tc = tc;
+            this.movingYaw = movingYaw; this.rookYaw = rookYaw;
+            this.executeAt = executeAt; this.playerId = playerId;
         }
     }
 }
