@@ -109,7 +109,7 @@ public final class ChessCommands {
         dispatcher.register(literal("chessdev").executes(ctx -> {
             ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
             if (player.getCommandTags().contains("chess_dev")) {
-                player.removeCommandTag("chess_dev");
+                player.getCommandTags().remove("chess_dev");
                 player.sendMessage(Text.literal("Режим разработчика выключен."), false);
             } else {
                 player.addCommandTag("chess_dev");
