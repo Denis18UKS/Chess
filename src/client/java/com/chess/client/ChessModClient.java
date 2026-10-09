@@ -10,6 +10,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
 import net.minecraft.registry.Registries;
 import net.minecraft.util.ActionResult;
+import net.minecraft.util.TypedActionResult;
 
 public class ChessModClient implements ClientModInitializer {
     @Override
@@ -27,11 +28,10 @@ public class ChessModClient implements ClientModInitializer {
         UseItemCallback.EVENT.register((player, world, hand) -> {
             if (!player.isSneaking() && ModBlocks.isFigureItem(player.getStackInHand(hand))) {
                 if (world.isClient) openBoard(player.getStackInHand(hand).getItem());
-                return ActionResult.SUCCESS;
+                return TypedActionResult.success(player.getStackInHand(hand));
             }
-            return ActionResult.PASS;
+            return TypedActionResult.pass(player.getStackInHand(hand));
         });
-    }
 
     private static void openBoard(net.minecraft.item.Item item) {
         MinecraftClient.getInstance().setScreen(new ChessBoardScreen(Registries.ITEM.getId(item).getPath()));
