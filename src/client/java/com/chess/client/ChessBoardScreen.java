@@ -96,7 +96,7 @@ public class ChessBoardScreen extends Screen {
                     int pieceColor = Character.isUpperCase(piece) ? 0xFFFFFFFF : 0xFF202020;
                     String iconKey = iconKey(piece);
                     context.drawTexture(new net.minecraft.util.Identifier("chess", "textures/item/" + iconKey + ".png"),
-                        x + cell / 2 - 8, y + cell / 2 - 8, 0, 0, 16, 16, 32, 32);
+                        x + cell / 2 - 8, y + cell / 2 - 8, 16, 16, 0, 0, 32, 32, 32, 32);
                 }
                 if (row == 7) context.drawTextWithShadow(textRenderer, String.valueOf((char)('a' + col)), x + cell - 8, boardY + boardSize + 2, 0xFFCCCCCC);
                 if (col == 0) context.drawTextWithShadow(textRenderer, String.valueOf(8 - row), boardX - 10, y + (cell - 8) / 2, 0xFFCCCCCC);
