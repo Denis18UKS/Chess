@@ -37,10 +37,11 @@ public class ChessGraffitiToolItem extends Item {
         if (label.length() > 180) label = label.substring(0, 180);
         scale = Math.max(0.25f, Math.min(4.0f, scale));
         rgb &= 0xFFFFFF;
+        final int textRgb = rgb;
 
         DisplayEntity.TextDisplayEntity display = new DisplayEntity.TextDisplayEntity(EntityType.TEXT_DISPLAY, world);
         NbtCompound nbt = new NbtCompound();
-        Text styled = Text.literal(label).styled(style -> style.withColor(TextColor.fromRgb(rgb)));
+        Text styled = Text.literal(label).styled(style -> style.withColor(TextColor.fromRgb(textRgb)));
         nbt.putString("text", Text.Serializer.toJson(styled));
         nbt.putString("billboard", "fixed");
         nbt.putInt("background", 0);
