@@ -231,7 +231,8 @@ public final class ChessGameManager {
             BoardState state = entry.getValue();
             if (world == null || state.pending == null || tick < state.pending.executeAt) continue;
             PendingMove move = state.pending;
-            if (!ChessPieceType.fromBlock(world.getBlockState(move.from)).equals(move.type)) {
+            ChessPieceType sourcePiece = ChessPieceType.fromBlock(world.getBlockState(move.from));
+            if (sourcePiece == null || sourcePiece != move.type) {
                 state.pending = null;
                 continue;
             }
