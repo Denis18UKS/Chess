@@ -227,7 +227,7 @@ public final class ChessGameManager {
         updateTeamHighlights(world.getServer(), state);
         announceTurn(world, state);
         if (state.ruleMode != RuleMode.NO_REALISM || state.threeDimensional) checkEndCondition(world, state);
-        world.playSound(null, pos, SoundEvents.BLOCK_NOTE_BLOCK_PLING, SoundCategory.PLAYERS, 0.85f, 1.4f);
+        world.playSound(null, pos, SoundEvents.BLOCK_NOTE_BLOCK_PLING.value(), SoundCategory.PLAYERS, 0.85f, 1.4f);
         ChessNetwork.broadcastBoard(world);
     }
 
@@ -439,7 +439,7 @@ public final class ChessGameManager {
                 || (move.type == ChessPieceType.BLACK_PAWN && move.tr == 7);
             if (move.capturedSymbol != '.') {
                 registerCapturedPiece(world, state, move.capturedSymbol, move.type.isWhite());
-                world.playSound(null, move.to, SoundEvents.ENTITY_PLAYER_ATTACK_STRONG, SoundCategory.PLAYERS, 0.9f, 1.05f);
+                world.playSound(null, move.to, SoundEvents.ENTITY_PLAYER_ATTACK_STRONG.value(), SoundCategory.PLAYERS, 0.9f, 1.05f);
             }
 
             // Leave a pawn on the back rank until its owner chooses the replacement.
@@ -491,22 +491,22 @@ public final class ChessGameManager {
             state.running = false;
             if (inCheck) {
                 broadcast(world, "Мат! Победа " + (whiteToMove ? "чёрных" : "белых") + ".");
-                notifyCheckTeam(world, whiteToMove, "ШАХ И МАТ", SoundEvents.ENTITY_VILLAGER_NO);
-                notifyCheckTeam(world, !whiteToMove, "ПОБЕДА", SoundEvents.UI_TOAST_CHALLENGE_COMPLETE);
+                notifyCheckTeam(world, whiteToMove, "ШАХ И МАТ", SoundEvents.ENTITY_VILLAGER_NO.value());
+                notifyCheckTeam(world, !whiteToMove, "ПОБЕДА", SoundEvents.UI_TOAST_CHALLENGE_COMPLETE.value());
             } else {
                 broadcast(world, "Пат. Ничья.");
                 for (ServerPlayerEntity player : world.getPlayers())
-                    player.playSound(SoundEvents.BLOCK_NOTE_BLOCK_BELL, 0.9f, 0.8f);
+                    player.playSound(SoundEvents.BLOCK_NOTE_BLOCK_BELL.value(), 0.9f, 0.8f);
             }
         } else if (inCheck) {
             broadcast(world, "Шах " + (whiteToMove ? "белому" : "чёрному") + " королю!");
-            notifyCheckTeam(world, whiteToMove, "ШАХ", SoundEvents.BLOCK_NOTE_BLOCK_BELL);
+            notifyCheckTeam(world, whiteToMove, "ШАХ", SoundEvents.BLOCK_NOTE_BLOCK_BELL.value());
         }
     }
 
     private static void notifyCheckTeam(ServerWorld world, boolean white, String message, net.minecraft.sound.SoundEvent sound) {
         for (ServerPlayerEntity player : world.getPlayers()) {
-            Team team = player.getScoreboardTeam();
+            net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
             if (team != null && (team.getName().equals("white") || team.getName().equals("black"))
                 && white != team.getName().equals("white")) continue;
             player.sendMessage(Text.literal(message).formatted(
