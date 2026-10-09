@@ -7,6 +7,12 @@ import com.chess.ModBlocks;
 import com.chess.ModItems;
 import com.chess.client.renderer.ChessFigureRenderer;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.util.InputUtil;
+import net.minecraft.util.math.BlockPos;
+import org.lwjgl.glfw.GLFW;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import net.minecraft.client.MinecraftClient;
@@ -20,9 +26,36 @@ public class ChessModClient implements ClientModInitializer {
     public void onInitializeClient() {
         BlockEntityRendererFactories.register(ModBlockEntities.CHESS_FIGURE, ChessFigureRenderer::new);
         ChessClientNetwork.registerClient();
+        ChessWorldHighlights.register();
+        KeyBinding switchTeamKey = KeyBindingHelper.registerKeyBinding(
+            new KeyBinding("key.chess.switch_team", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_G, "category.chess"));
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            while (switchTeamKey.wasPressed()) {
+                if (ChessClientNetwork.developerMode) ChessClientNetwork.switchDevTeam();
+            }
+        });
 
         UseBlockCallback.EVENT.register((player, world, hand, hit) -> {
             var stack = player.getStackInHand(hand);
+            if (world.isClient && ChessClientNetwork.threeDimensional && !player.isSneaking()) {
+                BlockPos clickedPos = hit.getBlockPos();
+                var clickedState = world.getBlockState(clickedPos);
+                var clickedPiece = com.chess.ChessPieceType.fromBlock(clickedState);
+                if (clickedPiece != null) {
+                    BlockPos selected = ChessWorldHighlights.selectedPosition();
+                    if (selected == null) ChessClientNetwork.select3D(clickedPos);
+                    else {
+                        char moving = ChessBoardScreen.cellAt(ChessWorldHighlights.selectedRow(), ChessWorldHighlights.selectedCol());
+                        if (moving != '.' && Character.isUpperCase(moving) == clickedPiece.isWhite()) ChessClientNetwork.select3D(clickedPos);
+                        else ChessClientNetwork.move3D(clickedPos);
+                    }
+                    return ActionResult.SUCCESS;
+                }
+                if (clickedState.isOf(ModBlocks.CHESS_WHITE_SQUARE) || clickedState.isOf(ModBlocks.CHESS_BLACK_SQUARE)) {
+                    if (ChessWorldHighlights.selectedPosition() != null) ChessClientNetwork.move3D(clickedPos);
+                    return ActionResult.SUCCESS;
+                }
+            }
             if (!player.isSneaking() && ModBlocks.isFigureItem(stack)) {
                 if (world.isClient) openBoard(stack.getItem());
                 return ActionResult.SUCCESS;
@@ -42,6 +75,7 @@ public class ChessModClient implements ClientModInitializer {
         UseItemCallback.EVENT.register((player, world, hand) -> {
             var stack = player.getStackInHand(hand);
             if (!player.isSneaking() && ModBlocks.isFigureItem(stack)) {
+                if (world.isClient && ChessClientNetwork.threeDimensional) return TypedActionResult.pass(stack);
                 if (world.isClient) openBoard(stack.getItem());
                 return TypedActionResult.success(stack);
             }
