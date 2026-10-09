@@ -489,11 +489,29 @@ public final class ChessGameManager {
             state.enPassantRow, state.enPassantCol, kingMoved, leftMoved, rightMoved);
         if (!moves) {
             state.running = false;
-            broadcast(world, inCheck
-                ? "Мат! Победа " + (whiteToMove ? "чёрных" : "белых") + "."
-                : "Пат. Ничья.");
+            if (inCheck) {
+                broadcast(world, "Мат! Победа " + (whiteToMove ? "чёрных" : "белых") + ".");
+                notifyCheckTeam(world, whiteToMove, "ШАХ И МАТ", SoundEvents.ENTITY_VILLAGER_NO);
+                notifyCheckTeam(world, !whiteToMove, "ПОБЕДА", SoundEvents.UI_TOAST_CHALLENGE_COMPLETE);
+            } else {
+                broadcast(world, "Пат. Ничья.");
+                for (ServerPlayerEntity player : world.getPlayers())
+                    player.playSound(SoundEvents.BLOCK_NOTE_BLOCK_BELL, 0.9f, 0.8f);
+            }
         } else if (inCheck) {
             broadcast(world, "Шах " + (whiteToMove ? "белому" : "чёрному") + " королю!");
+            notifyCheckTeam(world, whiteToMove, "ШАХ", SoundEvents.BLOCK_NOTE_BLOCK_BELL);
+        }
+    }
+
+    private static void notifyCheckTeam(ServerWorld world, boolean white, String message, net.minecraft.sound.SoundEvent sound) {
+        for (ServerPlayerEntity player : world.getPlayers()) {
+            Team team = player.getScoreboardTeam();
+            if (team != null && (team.getName().equals("white") || team.getName().equals("black"))
+                && white != team.getName().equals("white")) continue;
+            player.sendMessage(Text.literal(message).formatted(
+                message.contains("МАТ") ? Formatting.DARK_RED : Formatting.RED, Formatting.BOLD), true);
+            player.playSound(sound, 0.9f, message.contains("ШАХ") ? 1.1f : 1.0f);
         }
     }
 
