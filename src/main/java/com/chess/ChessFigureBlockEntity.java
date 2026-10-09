@@ -14,6 +14,18 @@ import software.bernie.geckolib.util.GeckoLibUtil;
 
 public class ChessFigureBlockEntity extends BlockEntity implements GeoBlockEntity {
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
+
+    // Legacy key-handler constants retained for source compatibility. The new
+    // board UI no longer registers the old I/J/K/L control handler.
+    public static final RawAnimation LADYA_FORWARD = RawAnimation.begin().thenPlay("ladya_1_forward");
+    public static final RawAnimation LADYA_BACK = RawAnimation.begin().thenPlay("ladya_1_back");
+    public static final RawAnimation LADYA_LEFT = RawAnimation.begin().thenPlay("ladya_1_left");
+    public static final RawAnimation LADYA_RIGHT = RawAnimation.begin().thenPlay("ladya_1_right");
+    public static final RawAnimation PESHKA_FORWARD = RawAnimation.begin().thenPlay("hode_1");
+    public static final RawAnimation PESHKA_BACK = RawAnimation.begin().thenPlay("hode_2");
+    public static final RawAnimation PESHKA_LEFT = RawAnimation.begin().thenPlay("hode_1");
+    public static final RawAnimation PESHKA_RIGHT = RawAnimation.begin().thenPlay("hode_1");
+
     private RawAnimation pendingAnimation;
 
     public ChessFigureBlockEntity(BlockPos pos, BlockState state) {
