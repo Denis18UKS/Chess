@@ -16,10 +16,11 @@
   "block.chess.chess_black_peshka": "Чёрная пешка",
   "item.chess.chess_board_tool": "Конфигуратор шахматной доски",
   "item.chess.chess_teleport_tool": "TP-конфигуратор",
-  "item.chess.chess_graffiti_tool": "Инструмент надписей",
+  "item.chess.chess_graffiti_tool": "Конфигуратор надписей",
   "key.chess.ladya_forward": "Ладья: вперёд",
   "key.chess.ladya_back": "Ладья: назад",
   "key.chess.ladya_left": "Ладья: влево",
   "key.chess.ladya_right": "Ладья: вправо",
-  "category.chess": "Chess"
+  "category.chess": "Chess",
+  "item.chess.chess_asset_studio_tool": "Студия моделей и текстур"
 }
