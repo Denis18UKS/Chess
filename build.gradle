@@ -162,3 +162,7 @@ tasks.register("generateChessAssets") {
 tasks.named("processResources").configure {
     dependsOn(tasks.named("generateChessAssets"))
 }
+
+tasks.named("sourcesJar").configure {
+    dependsOn(tasks.named("generateChessAssets"))
+}
