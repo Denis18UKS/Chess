@@ -16,10 +16,11 @@
   "block.chess.chess_black_peshka": "Black Pawn",
   "item.chess.chess_board_tool": "Chess Board Configurator",
   "item.chess.chess_teleport_tool": "Chess Teleport Configurator",
-  "item.chess.chess_graffiti_tool": "Chess Graffiti Tool",
+  "item.chess.chess_graffiti_tool": "Graffiti Configurator",
   "key.chess.ladya_forward": "Rook: forward",
   "key.chess.ladya_back": "Rook: back",
   "key.chess.ladya_left": "Rook: left",
   "key.chess.ladya_right": "Rook: right",
-  "category.chess": "Chess"
+  "category.chess": "Chess",
+  "item.chess.chess_asset_studio_tool": "Model & Texture Studio"
 }
