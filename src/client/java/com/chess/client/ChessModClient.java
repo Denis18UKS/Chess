@@ -32,6 +32,7 @@ public class ChessModClient implements ClientModInitializer {
             }
             return TypedActionResult.pass(player.getStackInHand(hand));
         });
+    }
 
     private static void openBoard(net.minecraft.item.Item item) {
         MinecraftClient.getInstance().setScreen(new ChessBoardScreen(Registries.ITEM.getId(item).getPath()));
