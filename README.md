@@ -82,7 +82,7 @@ The build generates the inventory icon PNGs, then creates the remapped mod JAR u
 - The world-backed logical board is read from the blocks in a fixed 8×8 region; the board configurator does not automatically construct the tiles for you.
 - Full-realism contains the core move/check rules listed above but does not yet implement all formal tournament draw rules, threefold repetition, the 50-move rule, chess clocks or draw offers.
 - The GeckoLib movement animation packet starts from the source figure; block relocation is delayed for an animation window. Fine adjustment of animation duration/axis against the supplied models still needs in-game verification.
-- The GUI currently uses recognizable chess-letter glyphs to display board occupancy; inventory slots use the generated 2D figure icons.
+- The GUI displays 2D piece icons generated for the inventory sprites; the world figures remain GeckoLib 3D block entities.
 - The current generated textures for pieces without original PNGs are simple UV atlases. Replace them with polished model-matched textures when those source PNGs are available.
 
 ## License
