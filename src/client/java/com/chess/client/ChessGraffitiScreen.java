@@ -41,25 +41,25 @@ public class ChessGraffitiScreen extends Screen {
 
         addDrawableChild(ButtonWidget.builder(Text.literal("−"), b -> {
             scale = Math.max(0.25f, scale - 0.25f);
-            clearAndInit();
+            rebuildKeepingText();
         }).dimensions(mid - 115, 113, 24, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("+"), b -> {
             scale = Math.min(4.0f, scale + 0.25f);
-            clearAndInit();
+            rebuildKeepingText();
         }).dimensions(mid + 91, 113, 24, 20).build());
 
         addDrawableChild(ButtonWidget.builder(Text.literal("Цвет: " + COLOR_NAMES[colorIndex]), b -> {
             colorIndex = (colorIndex + 1) % COLORS.length;
-            clearAndInit();
+            rebuildKeepingText();
         }).dimensions(mid - 80, 113, 160, 20).build());
 
         addDrawableChild(ButtonWidget.builder(Text.literal("Повернуть −90°"), b -> {
             yaw = (yaw + 270.0f) % 360.0f;
-            clearAndInit();
+            rebuildKeepingText();
         }).dimensions(mid - 145, 145, 140, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Повернуть +90°"), b -> {
             yaw = (yaw + 90.0f) % 360.0f;
-            clearAndInit();
+            rebuildKeepingText();
         }).dimensions(mid + 5, 145, 140, 20).build());
 
         addDrawableChild(ButtonWidget.builder(Text.literal("Разместить надпись"), b -> place())
@@ -79,6 +79,12 @@ public class ChessGraffitiScreen extends Screen {
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("Точка: " + target.getX() + " " + target.getY() + " " + target.getZ()), width / 2, height - 38, 0xFF999999);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal(status), width / 2, height - 25, 0xFFFFE3A3);
         super.render(context, mouseX, mouseY, delta);
+    }
+
+    private void rebuildKeepingText() {
+        String currentText = textField == null ? "" : textField.getText();
+        clearAndInit();
+        if (textField != null) textField.setText(currentText);
     }
 
     private void place() {
