@@ -22,5 +22,6 @@
   "key.chess.ladya_left": "Ладья: влево",
   "key.chess.ladya_right": "Ладья: вправо",
   "category.chess": "Chess",
-  "item.chess.chess_asset_studio_tool": "Студия моделей и текстур"
+  "item.chess.chess_asset_studio_tool": "Студия моделей и текстур",
+  "key.chess.switch_team": "Переключить команду (DEV)"
 }
