@@ -72,8 +72,9 @@ public class ChessBoardScreen extends Screen {
                 char piece = cells.charAt(row * 8 + col);
                 if (piece != '.') {
                     int pieceColor = Character.isUpperCase(piece) ? 0xFFFFFFFF : 0xFF202020;
-                    String glyph = String.valueOf(piece);
-                    context.drawCenteredTextWithShadow(textRenderer, Text.literal(glyph), x + cell / 2, y + (cell - 8) / 2, pieceColor);
+                    String iconKey = iconKey(piece);
+                    context.drawTexture(new net.minecraft.util.Identifier("chess", "textures/item/" + iconKey + ".png"),
+                        x + cell / 2 - 8, y + cell / 2 - 8, 0, 0, 16, 16, 32, 32);
                 }
                 if (row == 7) context.drawTextWithShadow(textRenderer, String.valueOf((char)('a' + col)), x + cell - 8, boardY + boardSize + 2, 0xFFCCCCCC);
                 if (col == 0) context.drawTextWithShadow(textRenderer, String.valueOf(8 - row), boardX - 10, y + (cell - 8) / 2, 0xFFCCCCCC);
@@ -133,6 +134,21 @@ public class ChessBoardScreen extends Screen {
             }
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    private String iconKey(char piece) {
+        boolean white = Character.isUpperCase(piece);
+        String model;
+        switch (Character.toUpperCase(piece)) {
+            case 'K': model = "king"; break;
+            case 'Q': model = "ferz"; break;
+            case 'R': model = "ladya"; break;
+            case 'B': model = "el"; break;
+            case 'N': model = "horse"; break;
+            case 'P': model = "peshka"; break;
+            default: model = "peshka";
+        }
+        return "chess_" + (white ? "white_" : "black_") + model;
     }
 
     private boolean matchesHeldPiece(char piece) {
