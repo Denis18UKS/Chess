@@ -118,22 +118,44 @@ tasks.register("generateChessAssets") {
                 g.dispose()
                 javax.imageio.ImageIO.write(image, "png", icon)
 
-                File texture = new File(root, "assets/chess/textures/figures/${side}_figures/${side}_${piece}.png")
-                File original = new File(srcFigureTextures, "${side}_figures/${side}_${piece}.png")
-                if (!original.exists()) {
-                    texture.parentFile.mkdirs()
-                    int size = piece == "ladya" ? 64 : 32
-                    BufferedImage atlas = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB)
-                    Graphics2D tg = atlas.createGraphics()
-                    tg.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF)
-                    tg.setColor(fill); tg.fillRect(0, 0, size, size)
-                    tg.setColor(edge)
-                    for (int i = 0; i < size; i += 8) { tg.drawLine(i, 0, i, size - 1); tg.drawLine(0, i, size - 1, i) }
-                    tg.drawRect(0, 0, size - 1, size - 1)
-                    tg.dispose()
-                    javax.imageio.ImageIO.write(atlas, "png", texture)
+                File texture = new File(root, "assets/chess/textures/generated/figures/${side}_${piece}.png")
+                texture.parentFile.mkdirs()
+                int size = piece == "ladya" ? 64 : 32
+                BufferedImage atlas = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB)
+                Graphics2D tg = atlas.createGraphics()
+                tg.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF)
+                tg.setColor(fill); tg.fillRect(0, 0, size, size)
+                Color textureLine = isWhite ? new Color(207, 196, 173) : new Color(59, 60, 66)
+                tg.setColor(textureLine)
+                for (int i = 8; i < size; i += 16) {
+                    tg.drawLine(1, i, size - 2, i)
                 }
+                tg.setColor(edge)
+                tg.drawRect(0, 0, size - 1, size - 1)
+                tg.dispose()
+                javax.imageio.ImageIO.write(atlas, "png", texture)
             }
+        }
+
+        // The board squares are only two pixels tall, so generate an exact 16x16
+        // tile atlas and use subtle wood colors rather than missing-texture purple.
+        ["white", "black"].each { side ->
+            boolean lightTile = side == "white"
+            Color wood = lightTile ? new Color(216, 198, 160) : new Color(95, 63, 46)
+            Color seam = lightTile ? new Color(204, 185, 148) : new Color(85, 55, 41)
+            BufferedImage tile = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB)
+            Graphics2D boardGraphics = tile.createGraphics()
+            boardGraphics.setColor(wood)
+            boardGraphics.fillRect(0, 0, 16, 16)
+            boardGraphics.setColor(seam)
+            boardGraphics.drawLine(1, 5, 14, 5)
+            boardGraphics.drawLine(1, 11, 14, 11)
+            boardGraphics.setColor(lightTile ? new Color(154, 124, 83) : new Color(52, 35, 28))
+            boardGraphics.drawRect(0, 0, 15, 15)
+            boardGraphics.dispose()
+            File boardTexture = new File(root, "assets/chess/textures/block/chess_${side}_square.png")
+            boardTexture.parentFile.mkdirs()
+            javax.imageio.ImageIO.write(tile, "png", boardTexture)
         }
     }
 }
