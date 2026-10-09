@@ -5,6 +5,7 @@ import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.network.packet.s2c.play.BlockEntityUpdateS2CPacket;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
 import software.bernie.geckolib.animatable.GeoBlockEntity;
 import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
 import software.bernie.geckolib.core.animation.AnimationController;
@@ -18,6 +19,10 @@ public class ChessFigureBlockEntity extends BlockEntity implements GeoBlockEntit
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
     private RawAnimation pendingAnimation;
     private float yawDegrees;
+    private BlockPos moveTarget;
+    private long moveStartedAt;
+    private int moveDurationTicks = 1;
+    private boolean knightMove;
 
     public static final RawAnimation LADYA_FORWARD = RawAnimation.begin().thenPlay("ladya_1_forward");
     public static final RawAnimation LADYA_BACK = RawAnimation.begin().thenPlay("ladya_1_back");
@@ -34,6 +39,44 @@ public class ChessFigureBlockEntity extends BlockEntity implements GeoBlockEntit
 
     public float getYawDegrees() { return yawDegrees; }
 
+    public void beginMove(BlockPos target, int durationTicks) { beginMove(target, durationTicks, false); }
+
+    public void beginMove(BlockPos target, int durationTicks, boolean knight) {
+        if (world == null || target == null) return;
+        moveTarget = target.toImmutable();
+        moveStartedAt = world.getTime();
+        moveDurationTicks = Math.max(1, durationTicks);
+        knightMove = knight;
+        markDirty();
+        if (!world.isClient) world.updateListeners(pos, getCachedState(), getCachedState(), 3);
+    }
+
+    public Vec3d getRenderOffset(float tickDelta) {
+        if (world == null || moveTarget == null) return Vec3d.ZERO;
+        double progress = ((world.getTime() + tickDelta) - moveStartedAt) / (double)Math.max(1, moveDurationTicks);
+        progress = Math.max(0.0, Math.min(1.0, progress));
+        double eased = smooth(progress);
+        double dx = moveTarget.getX() - pos.getX(), dz = moveTarget.getZ() - pos.getZ();
+        double x, z;
+        if (knightMove && Math.abs(dx) > 0.5 && Math.abs(dz) > 0.5) {
+            boolean longOnX = Math.abs(dx) > Math.abs(dz);
+            double longProgress = smooth(Math.min(1.0, progress / 0.64));
+            double shortProgress = smooth(Math.max(0.0, (progress - 0.64) / 0.36));
+            x = longOnX ? dx * longProgress : dx * shortProgress;
+            z = longOnX ? dz * shortProgress : dz * longProgress;
+        } else {
+            x = dx * eased;
+            z = dz * eased;
+        }
+        double y = (moveTarget.getY() - pos.getY()) * eased + Math.sin(Math.PI * progress) * (knightMove ? 0.72 : 0.10);
+        return new Vec3d(x, y, z);
+    }
+
+    private static double smooth(double value) {
+        double t = Math.max(0.0, Math.min(1.0, value));
+        return t * t * (3.0 - 2.0 * t);
+    }
+
     public void setYawDegrees(float yawDegrees) {
         this.yawDegrees = (Math.round(yawDegrees / 90.0f) * 90.0f) % 360.0f;
         markDirty();
@@ -46,12 +89,22 @@ public class ChessFigureBlockEntity extends BlockEntity implements GeoBlockEntit
     protected void writeNbt(NbtCompound nbt) {
         super.writeNbt(nbt);
         nbt.putFloat("ChessYaw", yawDegrees);
+        if (moveTarget != null) {
+            nbt.putLong("ChessMoveTarget", moveTarget.asLong());
+            nbt.putLong("ChessMoveStarted", moveStartedAt);
+            nbt.putInt("ChessMoveDuration", moveDurationTicks);
+            nbt.putBoolean("ChessKnightMove", knightMove);
+        }
     }
 
     @Override
     public void readNbt(NbtCompound nbt) {
         super.readNbt(nbt);
         yawDegrees = nbt.contains("ChessYaw") ? nbt.getFloat("ChessYaw") : 0.0f;
+        moveTarget = nbt.contains("ChessMoveTarget") ? BlockPos.fromLong(nbt.getLong("ChessMoveTarget")) : null;
+        moveStartedAt = nbt.getLong("ChessMoveStarted");
+        moveDurationTicks = nbt.contains("ChessMoveDuration") ? Math.max(1, nbt.getInt("ChessMoveDuration")) : 1;
+        knightMove = nbt.getBoolean("ChessKnightMove");
     }
 
     @Override
