@@ -9,9 +9,12 @@ import java.util.UUID;
 import java.util.ArrayList;
 import java.util.List;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -21,8 +24,11 @@ import net.minecraft.util.Formatting;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.Identifier;
 import net.minecraft.world.World;
 import net.minecraft.registry.RegistryKey;
+import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.Registries;
 import net.minecraft.network.packet.s2c.play.PlaySoundS2CPacket;
 import net.minecraft.world.GameMode;
@@ -30,19 +36,39 @@ import net.minecraft.world.GameMode;
 /** Server-authoritative chess board and match controller. */
 public final class ChessGameManager {
     public enum RuleMode { NO_REALISM, REALISM, FULL_REALISM }
-    public enum MatchMode { ONE_ONE, TWO_TWO }
+    public enum MatchMode { ONE_ONE, TWO_TWO, ONE_VS_BOT }
 
     private static final Map<RegistryKey<World>, BoardState> BOARDS = new HashMap<>();
     private static final Set<UUID> KIT_SLOT_WARNED = new HashSet<>();
+    private static final Set<UUID> CHESS_GLOWING = new HashSet<>();
+    private static final Set<String> ACTIVE_ZONE_VISITS = new HashSet<>();
 
     private ChessGameManager() {}
 
     public static void registerTicker() {
         ServerTickEvents.END_SERVER_TICK.register(ChessGameManager::tick);
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
+            server.execute(() -> handlePlayerJoin(handler.player)));
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
+            server.execute(() -> handlePlayerDisconnect(handler.player)));
     }
 
     public static BoardState board(World world) {
-        return BOARDS.computeIfAbsent(world.getRegistryKey(), key -> new BoardState());
+        return BOARDS.computeIfAbsent(world.getRegistryKey(), key -> {
+            BoardState state = new BoardState();
+            if (world instanceof ServerWorld serverWorld) {
+                ChessWorldConfig config = ChessWorldConfig.get(serverWorld.getServer());
+                state.matchMode = config.getMatchMode();
+                state.ruleMode = config.getRuleMode();
+                state.matchDurationMinutes = config.getMatchDurationMinutes();
+                for (String team : List.of("white", "black")) {
+                    ChessWorldConfig.SavedPos saved = config.getLocation(team);
+                    if (saved != null && saved.dimension.equals(serverWorld.getRegistryKey().getValue().toString()))
+                        state.teleportTargets.put(team, saved.pos);
+                }
+            }
+            return state;
+        });
     }
 
     public static void configureBoard(ServerWorld world, BlockPos firstSquare) {
@@ -98,36 +124,76 @@ public final class ChessGameManager {
     public static void start(ServerWorld world) {
         BoardState state = board(world);
         if (!state.configured) throw new IllegalStateException("Сначала привяжите поле предметом Chess Board Configurator.");
+        if (state.matchEnded) resetBoard(world);
+        ChessWorldConfig config = ChessWorldConfig.get(world.getServer());
+        state.matchMode = config.getMatchMode();
+        state.ruleMode = config.getRuleMode();
+        state.matchDurationMinutes = config.getMatchDurationMinutes();
         state.running = true;
         state.paused = false;
+        state.pausedByDisconnect = false;
+        state.matchEnded = false;
+        state.returnToLobbyAtTick = -1L;
         state.whiteTurn = true;
         state.pending = null;
         state.promotionPending = false;
+        state.botMoveAtTick = state.matchMode == MatchMode.ONE_VS_BOT ? serverTick(world.getServer()) + 20L : -1L;
+        state.matchDeadlineAtTick = state.matchDurationMinutes > 0
+            ? serverTick(world.getServer()) + state.matchDurationMinutes * 1200L : -1L;
         state.whiteClockTicks = state.blackClockTicks = state.clockMaxTicks();
+        for (ServerPlayerEntity player : world.getPlayers()) {
+            net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
+            if (team != null && (team.getName().equals("white") || team.getName().equals("black")))
+                state.participants.add(player.getUuid());
+        }
         autoConfigureCaptures(world, state);
-        broadcast(world, "Шахматная партия началась. Первый ход — белые.");
+        broadcast(world, state.matchMode == MatchMode.ONE_VS_BOT
+            ? "Шахматная партия началась: ты играешь против бота. Первый ход — белые."
+            : "Шахматная партия началась. Первый ход — белые.");
         updateTeamHighlights(world.getServer(), state);
+        updateTurnGlow(world, state);
         syncAllTeamPieces(world.getServer());
         ChessNetwork.broadcastBoard(world);
         ChessNetwork.broadcastClockState(world);
     }
 
+    /** Force-completes the active match and schedules the lobby return. */
     public static void stop(ServerWorld world, String message) {
+        finishMatch(world, message);
+    }
+
+    private static void finishMatch(ServerWorld world, String message) {
         BoardState state = board(world);
         state.running = false;
         state.paused = false;
+        state.pausedByDisconnect = false;
         state.pending = null;
+        state.promotionPending = false;
+        state.selected3DPieces.clear();
+        state.matchEnded = true;
+        state.matchDeadlineAtTick = -1L;
+        int delay = ChessWorldConfig.get(world.getServer()).getLobbyDelaySeconds();
+        state.returnToLobbyAtTick = serverTick(world.getServer()) + delay * 20L;
+        updateTurnGlow(world, state);
         syncAllTeamPieces(world.getServer());
         ChessNetwork.broadcastBoard(world);
         ChessNetwork.broadcastClockState(world);
         broadcast(world, message);
+        if (delay == 0) {
+            state.returnToLobbyAtTick = -1L;
+            teleportAllToLobby(world);
+        } else {
+            broadcast(world, "Возврат игроков в лобби запланирован через " + delay + " сек.");
+        }
     }
 
     public static void togglePause(ServerWorld world) {
         BoardState state = board(world);
         if (!state.running) throw new IllegalStateException("Партия не запущена.");
         state.paused = !state.paused;
+        state.pausedByDisconnect = false;
         broadcast(world, state.paused ? "Шахматная партия приостановлена." : "Шахматная партия продолжена.");
+        updateTurnGlow(world, state);
         ChessNetwork.broadcastClockState(world);
     }
 
@@ -143,6 +209,7 @@ public final class ChessGameManager {
     public static void setRuleMode(ServerWorld world, RuleMode mode) {
         BoardState state = board(world);
         state.ruleMode = mode;
+        ChessWorldConfig.get(world.getServer()).setRuleMode(mode);
         broadcast(world, "Режим правил: " + mode.name().toLowerCase() + ".");
         ChessNetwork.broadcastBoard(world);
         ChessNetwork.broadcastClockState(world);
@@ -157,7 +224,12 @@ public final class ChessGameManager {
         state.promotionRow = state.promotionCol = -1;
         state.whiteTurn = true;
         state.paused = false;
-        state.running = true;
+        state.pausedByDisconnect = false;
+        state.running = false;
+        state.matchEnded = false;
+        state.returnToLobbyAtTick = -1L;
+        state.matchDeadlineAtTick = -1L;
+        state.botMoveAtTick = -1L;
         state.whiteKingMoved = state.blackKingMoved = false;
         state.whiteLeftRookMoved = state.whiteRightRookMoved = false;
         state.blackLeftRookMoved = state.blackRightRookMoved = false;
@@ -166,6 +238,7 @@ public final class ChessGameManager {
         state.whiteCapturedPieces.clear();
         state.blackCapturedPieces.clear();
         state.selected3DPieces.clear();
+        updateTurnGlow(world, state);
 
         String blackBack = "rnbqkbnr";
         String whiteBack = "RNBQKBNR";
@@ -197,7 +270,7 @@ public final class ChessGameManager {
         syncAllTeamPieces(world.getServer());
         ChessNetwork.broadcastBoard(world);
         ChessNetwork.broadcastClockState(world);
-        broadcast(world, "Доска сброшена. Фигуры расставлены в начальную позицию, первый ход — белые.");
+        broadcast(world, "Фигуры сброшены в начальную позицию. Партия не запущена; для старта выполни /chess start.");
     }
 
     private static void clearCaptureTray(ServerWorld world, BlockPos tray) {
@@ -497,7 +570,24 @@ public final class ChessGameManager {
     public static void setMatchMode(ServerWorld world, MatchMode mode) {
         BoardState state = board(world);
         state.matchMode = mode;
-        broadcast(world, mode == MatchMode.ONE_ONE ? "Режим 1v1." : "Режим 2v2.");
+        ChessWorldConfig.get(world.getServer()).setMatchMode(mode);
+        String label = mode == MatchMode.ONE_ONE ? "1v1" : mode == MatchMode.TWO_TWO ? "2v2" : "1_vs_bot";
+        broadcast(world, "Режим партии: " + label + ".");
+        ChessNetwork.broadcastBoard(world);
+    }
+
+    public static void setMatchDuration(ServerWorld world, int minutes) {
+        BoardState state = board(world);
+        state.matchDurationMinutes = Math.max(0, Math.min(1440, minutes));
+        ChessWorldConfig.get(world.getServer()).setMatchDurationMinutes(state.matchDurationMinutes);
+        broadcast(world, state.matchDurationMinutes == 0 ? "Общий лимит времени партии отключён." :
+            "Общий лимит времени партии: " + state.matchDurationMinutes + " мин.");
+    }
+
+    public static void setLobbyDelay(MinecraftServer server, int seconds) {
+        int clamped = Math.max(0, Math.min(3600, seconds));
+        ChessWorldConfig.get(server).setLobbyDelaySeconds(clamped);
+        server.getPlayerManager().broadcast(Text.literal("Задержка возврата в лобби: " + clamped + " сек."), false);
     }
 
     public static boolean transferTurn(ServerWorld world) {
@@ -511,7 +601,10 @@ public final class ChessGameManager {
 
     public static void setTeleport(ServerWorld world, boolean white, BlockPos pos) {
         BoardState state = board(world);
-        state.teleportTargets.put(white ? "white" : "black", pos.toImmutable());
+        String team = white ? "white" : "black";
+        state.teleportTargets.put(team, pos.toImmutable());
+        ChessWorldConfig.get(world.getServer()).setLocation(team, world, pos);
+        broadcast(world, "Точка команды " + team + " сохранена в настройках мира.");
     }
 
     public static BlockPos teleportTarget(ServerWorld world, boolean white) {
