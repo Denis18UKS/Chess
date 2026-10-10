@@ -632,7 +632,7 @@ public final class ChessGameManager {
             BoardState state = entry.getValue();
             if (world == null) continue;
             if (tick % 20L == 0L) {
-                if (state.running && !state.paused && !state.promotionPending
+                if (state.running && !state.paused && state.pending == null && !state.promotionPending
                     && state.ruleMode != RuleMode.NO_REALISM) {
                     boolean losingWhite = state.whiteTurn;
                     if (losingWhite) state.whiteClockTicks = Math.max(0L, state.whiteClockTicks - 20L);
