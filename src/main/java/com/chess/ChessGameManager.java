@@ -315,7 +315,11 @@ public final class ChessGameManager {
         for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
             BoardState state = entry.getValue();
             ServerWorld world = server.getWorld(entry.getKey());
-            if (world == null || !state.running || !world.getRegistryKey().equals(player.getWorld().getRegistryKey()) || state.paused) continue;
+            if (world == null || !state.running || !world.getRegistryKey().equals(player.getWorld().getRegistryKey())) continue;
+            // Any player who disconnects during a live match is recognized on rejoin and
+            // is not sent to lobby. Only key-team disconnections trigger the pause below.
+            DISCONNECTED_DURING_ACTIVE_MATCH.add(player.getUuid());
+            if (state.paused) continue;
             net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
             if (team == null || !(team.getName().equals("white") || team.getName().equals("black"))) continue;
 
