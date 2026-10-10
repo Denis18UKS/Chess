@@ -389,10 +389,10 @@ public final class ChessGameManager {
         if (tray != null) placeCapturedBlock(world, tray, capturedIndex, pawnSymbol);
         state.promotionPending = false;
         state.promotionPlayerId = null;
-        if (state.ruleMode != RuleMode.NO_REALISM || state.threeDimensional) state.whiteTurn = !state.whiteTurn;
+        state.whiteTurn = !state.whiteTurn;
         updateTeamHighlights(world.getServer(), state);
         announceTurn(world, state);
-        if (state.ruleMode != RuleMode.NO_REALISM || state.threeDimensional) checkEndCondition(world, state);
+        checkEndCondition(world, state);
         world.playSound(null, pos, SoundEvents.BLOCK_NOTE_BLOCK_PLING.value(), SoundCategory.PLAYERS, 0.85f, 1.4f);
         ChessNetwork.broadcastBoard(world);
     }
@@ -542,8 +542,10 @@ public final class ChessGameManager {
             }
         }
 
-        boolean enforceMovement = state.ruleMode != RuleMode.NO_REALISM || state.threeDimensional;
-        boolean full = state.ruleMode != RuleMode.NO_REALISM || state.threeDimensional;
+        // All variants keep real chess movement and king-safety rules. FULL_REALISM
+        // additionally requires the matching piece item in hand; NO_REALISM disables the clock.
+        boolean enforceMovement = true;
+        boolean full = true;
         boolean kingMoved = type.isWhite() ? state.whiteKingMoved : state.blackKingMoved;
         boolean leftRookMoved = type.isWhite() ? state.whiteLeftRookMoved : state.blackLeftRookMoved;
         boolean rightRookMoved = type.isWhite() ? state.whiteRightRookMoved : state.blackRightRookMoved;
@@ -645,10 +647,10 @@ public final class ChessGameManager {
             } else {
                 if (needsPromotion) tellPlayerByUuid(world, move.playerId,
                     "Нет доступной срубленной фигуры для превращения: пешка остаётся пешкой.");
-                if (state.ruleMode != RuleMode.NO_REALISM || state.threeDimensional) state.whiteTurn = !state.whiteTurn;
+                state.whiteTurn = !state.whiteTurn;
                 updateTeamHighlights(server, state);
                 announceTurn(world, state);
-                if (state.ruleMode != RuleMode.NO_REALISM || state.threeDimensional) checkEndCondition(world, state);
+                checkEndCondition(world, state);
             }
             for (ServerPlayerEntity player : world.getPlayers())
                 ChessNetwork.sendHighlights(player, BlockPos.ORIGIN, -1, -1, new boolean[64]);
