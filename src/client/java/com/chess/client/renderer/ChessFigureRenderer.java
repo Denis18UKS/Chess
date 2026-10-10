@@ -21,7 +21,8 @@ public class ChessFigureRenderer extends GeoBlockRenderer<ChessFigureBlockEntity
                           VertexConsumerProvider bufferSource, VertexConsumer buffer, boolean isReRender,
                           float tickDelta, int light, int overlay, float red, float green, float blue, float alpha) {
         super.preRender(matrices, entity, model, bufferSource, buffer, isReRender,
-            tickDelta, light, overlay, red, green, blue, alpha);
+            tickDelta, light, overlay, red * entity.getTintRed(), green * entity.getTintGreen(),
+            blue * entity.getTintBlue(), alpha);
 
         // Interpolate along the real server-provided destination, not mirrored directional clips.
         Vec3d offset = entity.getRenderOffset(tickDelta);
