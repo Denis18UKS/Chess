@@ -1199,6 +1199,7 @@ public final class ChessGameManager {
     }
 
     private static void checkEndCondition(ServerWorld world, BoardState state) {
+        if (!state.running) return;
         char[][] cells = readBoard(world);
         boolean whiteToMove = state.whiteTurn;
         boolean inCheck = ChessRules.isInCheck(cells, whiteToMove);
@@ -1208,13 +1209,17 @@ public final class ChessGameManager {
         boolean moves = ChessRules.hasAnyLegalMove(cells, whiteToMove, true,
             state.enPassantRow, state.enPassantCol, kingMoved, leftMoved, rightMoved);
         if (!moves) {
-            state.running = false;
             if (inCheck) {
-                broadcast(world, "Мат! Победа " + (whiteToMove ? "чёрных" : "белых") + ".");
-                notifyCheckTeam(world, whiteToMove, "ШАХ И МАТ", SoundEvents.ENTITY_VILLAGER_NO);
-                notifyCheckTeam(world, !whiteToMove, "ПОБЕДА", SoundEvents.UI_TOAST_CHALLENGE_COMPLETE);
+                finishMatch(world, "Мат! Победа " + (whiteToMove ? "чёрных" : "белых") + ".");
+                if (state.matchMode == MatchMode.ONE_VS_BOT) {
+                    notifyCheckTeam(world, whiteToMove, "ПРОИГРЫШ", SoundEvents.ENTITY_VILLAGER_NO);
+                    if (!whiteToMove) notifyCheckTeam(world, true, "ПОБЕДА", SoundEvents.UI_TOAST_CHALLENGE_COMPLETE);
+                } else {
+                    notifyCheckTeam(world, whiteToMove, "ШАХ И МАТ", SoundEvents.ENTITY_VILLAGER_NO);
+                    notifyCheckTeam(world, !whiteToMove, "ПОБЕДА", SoundEvents.UI_TOAST_CHALLENGE_COMPLETE);
+                }
             } else {
-                broadcast(world, "Пат. Ничья.");
+                finishMatch(world, "Пат. Ничья.");
                 for (ServerPlayerEntity player : world.getPlayers())
                     playSoundToPlayer(player, SoundEvents.BLOCK_NOTE_BLOCK_CHIME.value(), 0.9f, 0.75f);
             }
@@ -1223,7 +1228,6 @@ public final class ChessGameManager {
             notifyCheckTeam(world, whiteToMove, "ШАХ", SoundEvents.BLOCK_NOTE_BLOCK_BELL.value());
         }
         ChessNetwork.broadcastClockState(world);
-        if (!state.running) syncAllTeamPieces(world.getServer());
     }
 
     private static void tellPlayerByUuid(ServerWorld world, UUID uuid, String message) {
