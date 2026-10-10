@@ -100,6 +100,8 @@ public final class ChessGameManager {
         autoConfigureCaptures(world, state);
         broadcast(world, "Шахматная партия началась. Первый ход — белые.");
         updateTeamHighlights(world.getServer(), state);
+        syncAllTeamPieces(world.getServer());
+        ChessNetwork.broadcastBoard(world);
     }
 
     public static void stop(ServerWorld world, String message) {
@@ -107,6 +109,8 @@ public final class ChessGameManager {
         state.running = false;
         state.paused = false;
         state.pending = null;
+        syncAllTeamPieces(world.getServer());
+        ChessNetwork.broadcastBoard(world);
         broadcast(world, message);
     }
 
@@ -121,6 +125,7 @@ public final class ChessGameManager {
         BoardState state = board(world);
         state.ruleMode = mode;
         broadcast(world, "Режим правил: " + mode.name().toLowerCase() + ".");
+        ChessNetwork.broadcastBoard(world);
     }
 
     public static void resetBoard(ServerWorld world) {
@@ -180,20 +185,80 @@ public final class ChessGameManager {
         }
     }
 
+    /** Reconciles the inventory against the player's current team instead of using one-time tags. */
     public static void giveTeamPieces(ServerPlayerEntity player, boolean white) {
-        String issuedTag = white ? "chess_pieces_white_given" : "chess_pieces_black_given";
-        if (player.getCommandTags().contains(issuedTag)) return;
-        player.addCommandTag(issuedTag);
+        syncPlayerPieceInventory(player);
+    }
+
+    public static void syncAllTeamPieces(MinecraftServer server) {
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) syncPlayerPieceInventory(player);
+    }
+
+    private static void syncPlayerPieceInventory(ServerPlayerEntity player) {
+        BoardState state = board(player.getWorld());
+        net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
+        boolean hasChessTeam = team != null && (team.getName().equals("white") || team.getName().equals("black"));
+        boolean white = hasChessTeam && team.getName().equals("white");
+        boolean shouldHaveKit = hasChessTeam && state.running && !state.threeDimensional;
+        net.minecraft.entity.player.PlayerInventory inventory = player.getInventory();
+
+        if (!shouldHaveKit) {
+            clearFigureItems(inventory);
+            return;
+        }
+        if (hasCorrectPieceKit(inventory, white)) return;
+
+        clearFigureItems(inventory);
+        int emptySlots = 0;
+        for (net.minecraft.item.ItemStack stack : inventory.main) if (stack.isEmpty()) emptySlots++;
+        int pieceKinds = 0;
+        for (ChessPieceType type : ChessPieceType.values()) if (type.isWhite() == white) pieceKinds++;
+        if (emptySlots < pieceKinds) {
+            player.sendMessage(Text.literal("Для комплекта шахмат освободи хотя бы " + pieceKinds + " слотов инвентаря."), true);
+            return;
+        }
+
         for (ChessPieceType type : ChessPieceType.values()) {
             if (type.isWhite() != white) continue;
-            int amount = Character.toUpperCase(type.symbol()) == 'P' ? 8
-                : ("RNB".indexOf(Character.toUpperCase(type.symbol())) >= 0 ? 2 : 1);
-            net.minecraft.item.Item item = type.block().asItem();
-            if (item == net.minecraft.item.Items.AIR) continue;
-            net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(item, amount);
-            if (!player.getInventory().insertStack(stack)) player.dropItem(stack, false);
+            int amount = pieceAmount(type);
+            net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(type.block().asItem(), amount);
+            inventory.insertStack(stack);
         }
-        player.sendMessage(Text.literal("Тебе выдан комплект шахматных фигур: " + (white ? "белые" : "чёрные") + "."), false);
+        inventory.markDirty();
+        player.sendMessage(Text.literal("Комплект шахматных фигур обновлён под команду " + (white ? "white" : "black") + "."), false);
+    }
+
+    private static int pieceAmount(ChessPieceType type) {
+        char symbol = Character.toUpperCase(type.symbol());
+        if (symbol == 'P') return 8;
+        if ("RNB".indexOf(symbol) >= 0) return 2;
+        return 1;
+    }
+
+    private static void clearFigureItems(net.minecraft.entity.player.PlayerInventory inventory) {
+        boolean changed = false;
+        for (int slot = 0; slot < inventory.size(); slot++) {
+            net.minecraft.item.ItemStack stack = inventory.getStack(slot);
+            if (ModBlocks.isFigureItem(stack)) {
+                inventory.setStack(slot, net.minecraft.item.ItemStack.EMPTY);
+                changed = true;
+            }
+        }
+        if (changed) inventory.markDirty();
+    }
+
+    private static boolean hasCorrectPieceKit(net.minecraft.entity.player.PlayerInventory inventory, boolean white) {
+        Map<net.minecraft.item.Item, Integer> actual = new HashMap<>();
+        for (int slot = 0; slot < inventory.size(); slot++) {
+            net.minecraft.item.ItemStack stack = inventory.getStack(slot);
+            if (ModBlocks.isFigureItem(stack)) actual.merge(stack.getItem(), stack.getCount(), Integer::sum);
+        }
+        for (ChessPieceType type : ChessPieceType.values()) {
+            int expected = type.isWhite() == white ? pieceAmount(type) : 0;
+            int count = actual.getOrDefault(type.block().asItem(), 0);
+            if (count != expected) return false;
+        }
+        return true;
     }
 
     public static void setViewMode(ServerWorld world, boolean threeDimensional) {
@@ -203,6 +268,7 @@ public final class ChessGameManager {
         broadcast(world, threeDimensional ? "Режим 3D включён." : "Режим 2D включён.");
         for (ServerPlayerEntity player : world.getPlayers())
             ChessNetwork.sendHighlights(player, BlockPos.ORIGIN, -1, -1, new boolean[64]);
+        syncAllTeamPieces(world.getServer());
         ChessNetwork.broadcastBoard(world);
     }
 
@@ -524,6 +590,7 @@ public final class ChessGameManager {
 
     private static void tick(MinecraftServer server) {
         long tick = serverTick(server);
+        if (tick % 20L == 0L) syncAllTeamPieces(server);
         for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
             ServerWorld world = server.getWorld(entry.getKey());
             BoardState state = entry.getValue();
