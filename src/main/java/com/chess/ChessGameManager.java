@@ -43,6 +43,7 @@ public final class ChessGameManager {
     private static final Set<UUID> CHESS_GLOWING = new HashSet<>();
     private static final Map<String, ChessWorldConfig.TriggerZone> ACTIVE_ZONE_VISITS = new HashMap<>();
     private static final Set<UUID> DISCONNECTED_DURING_ACTIVE_MATCH = new HashSet<>();
+    private static final UUID BOT_PLAYER_ID = new UUID(0L, 1L);
 
     private ChessGameManager() {}
 
@@ -766,6 +767,7 @@ public final class ChessGameManager {
         state.promotionPlayerId = null;
         state.whiteTurn = !state.whiteTurn;
         updateTeamHighlights(world.getServer(), state);
+        updateTurnGlow(world, state);
         announceTurn(world, state);
         checkEndCondition(world, state);
         world.playSound(null, pos, SoundEvents.BLOCK_NOTE_BLOCK_PLING.value(), SoundCategory.PLAYERS, 0.85f, 1.4f);
@@ -854,6 +856,9 @@ public final class ChessGameManager {
         if (!state.running || state.paused || state.pending != null) return false;
         state.whiteTurn = !state.whiteTurn;
         updateTeamHighlights(world.getServer(), state);
+        updateTurnGlow(world, state);
+        if (state.matchMode == MatchMode.ONE_VS_BOT && !state.whiteTurn)
+            state.botMoveAtTick = serverTick(world.getServer()) + 20L;
         broadcast(world, "Ход передан команде " + (state.whiteTurn ? "white" : "black") + ".");
         return true;
     }
@@ -1000,18 +1005,31 @@ public final class ChessGameManager {
 
     private static void tick(MinecraftServer server) {
         long tick = serverTick(server);
-        // The minigame is intended for adventure mode: prevent vanilla block breaking/placing
-        // from interfering with the board. Only players currently in Survival are changed.
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            if (player.interactionManager.getGameMode() == GameMode.SURVIVAL) {
+            if (player.interactionManager.getGameMode() == GameMode.SURVIVAL)
                 player.changeGameMode(GameMode.ADVENTURE);
-            }
         }
         if (tick % 20L == 0L) syncAllTeamPieces(server);
+        if (tick % 5L == 0L) processTriggerZones(server);
+
         for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
             ServerWorld world = server.getWorld(entry.getKey());
             BoardState state = entry.getValue();
             if (world == null) continue;
+
+            if (tick % 10L == 0L) updateTurnGlow(world, state);
+
+            if (state.returnToLobbyAtTick >= 0L && tick >= state.returnToLobbyAtTick) {
+                state.returnToLobbyAtTick = -1L;
+                teleportAllToLobby(world);
+            }
+
+            if (state.running && state.matchDeadlineAtTick >= 0L && tick >= state.matchDeadlineAtTick) {
+                finishMatch(world, "Общее время партии истекло. Игра завершена.");
+                for (ServerPlayerEntity player : world.getPlayers())
+                    playSoundToPlayer(player, SoundEvents.BLOCK_NOTE_BLOCK_CHIME.value(), 0.9f, 0.75f);
+            }
+
             if (tick % 20L == 0L) {
                 if (state.running && !state.paused && state.pending == null && !state.promotionPending
                     && state.ruleMode != RuleMode.NO_REALISM) {
@@ -1020,16 +1038,20 @@ public final class ChessGameManager {
                     else state.blackClockTicks = Math.max(0L, state.blackClockTicks - 20L);
                     long remaining = losingWhite ? state.whiteClockTicks : state.blackClockTicks;
                     if (remaining <= 0L) {
-                        state.running = false;
-                        broadcast(world, "Время команды " + (losingWhite ? "white" : "black") + " вышло.");
+                        finishMatch(world, "Время команды " + (losingWhite ? "white" : "black") + " вышло.");
                         notifyCheckTeam(world, losingWhite, "ПРОИГРЫШ", SoundEvents.ENTITY_VILLAGER_NO);
                         notifyCheckTeam(world, !losingWhite, "ПОБЕДА", SoundEvents.UI_TOAST_CHALLENGE_COMPLETE);
-                        syncAllTeamPieces(server);
                     }
                 }
                 ChessNetwork.broadcastClockState(world);
             }
-            if (state.pending == null || tick < state.pending.executeAt) continue;
+
+            if (state.running && state.matchMode == MatchMode.ONE_VS_BOT && !state.whiteTurn
+                && !state.paused && state.pending == null && !state.promotionPending) {
+                queueBotMove(world, state, tick);
+            }
+
+            if (!state.running || state.pending == null || tick < state.pending.executeAt) continue;
             PendingMove move = state.pending;
             ChessPieceType sourcePiece = ChessPieceType.fromBlock(world.getBlockState(move.from));
             if (sourcePiece == null || sourcePiece != move.type) {
@@ -1045,7 +1067,6 @@ public final class ChessGameManager {
                 world.playSound(null, move.to, SoundEvents.ENTITY_PLAYER_ATTACK_STRONG, SoundCategory.PLAYERS, 0.9f, 1.05f);
             }
 
-            // Leave a pawn on the back rank until its owner chooses the replacement.
             world.setBlockState(move.to, move.movingState, 3);
             if (world.getBlockEntity(move.to) instanceof ChessFigureBlockEntity movedEntity)
                 movedEntity.setYawDegrees(move.movingYaw);
@@ -1061,7 +1082,17 @@ public final class ChessGameManager {
             state.selected3DPieces.clear();
             world.playSound(null, move.to, SoundEvents.BLOCK_WOOD_PLACE, SoundCategory.PLAYERS, 0.65f, 1.0f);
 
-            if (needsPromotion && !promotionOptions(state, move.type.isWhite()).isEmpty()) {
+            String options = needsPromotion ? promotionOptions(state, move.type.isWhite()) : "";
+            if (needsPromotion && !options.isEmpty()
+                && state.matchMode == MatchMode.ONE_VS_BOT && !move.type.isWhite()
+                && BOT_PLAYER_ID.equals(move.playerId)) {
+                promoteBotPawn(world, state, options.charAt(0), move.tr, move.tc);
+                state.whiteTurn = true;
+                updateTeamHighlights(server, state);
+                updateTurnGlow(world, state);
+                announceTurn(world, state);
+                checkEndCondition(world, state);
+            } else if (needsPromotion && !options.isEmpty()) {
                 state.promotionPending = true;
                 state.promotionWhite = move.type.isWhite();
                 state.promotionRow = move.tr;
@@ -1073,7 +1104,12 @@ public final class ChessGameManager {
                 if (needsPromotion) tellPlayerByUuid(world, move.playerId,
                     "Нет доступной срубленной фигуры для превращения: пешка остаётся пешкой.");
                 state.whiteTurn = !state.whiteTurn;
+                if (state.matchMode == MatchMode.ONE_VS_BOT && !state.whiteTurn)
+                    state.botMoveAtTick = tick + 20L;
+                else
+                    state.botMoveAtTick = -1L;
                 updateTeamHighlights(server, state);
+                updateTurnGlow(world, state);
                 announceTurn(world, state);
                 checkEndCondition(world, state);
             }
@@ -1083,6 +1119,83 @@ public final class ChessGameManager {
             ChessNetwork.broadcastClockState(world);
             if (!state.running) syncAllTeamPieces(server);
         }
+    }
+
+    private static void queueBotMove(ServerWorld world, BoardState state, long tick) {
+        if (state.botMoveAtTick < 0L) state.botMoveAtTick = tick + 10L;
+        if (tick < state.botMoveAtTick) return;
+        char[][] cells = readBoard(world);
+        List<int[]> bestMoves = new ArrayList<>();
+        int bestScore = Integer.MIN_VALUE;
+        for (int fr = 0; fr < 8; fr++) for (int fc = 0; fc < 8; fc++) {
+            char piece = cells[fr][fc];
+            if (piece == '.' || Character.isUpperCase(piece)) continue;
+            ChessPieceType type = ChessPieceType.fromSymbol(piece);
+            if (type == null) continue;
+            for (int tr = 0; tr < 8; tr++) for (int tc = 0; tc < 8; tc++) {
+                char target = cells[tr][tc];
+                if (target != '.' && Character.toUpperCase(target) == 'K') continue;
+                if (!ChessRules.isLegalMove(cells, fr, fc, tr, tc, true,
+                    state.enPassantRow, state.enPassantCol, state.blackKingMoved,
+                    state.blackLeftRookMoved, state.blackRightRookMoved)) continue;
+                int score = target == '.' ? 0 : pieceValue(target) * 10;
+                char[][] next = ChessRules.copy(cells);
+                next[tr][tc] = piece;
+                next[fr][fc] = '.';
+                if (Character.toUpperCase(piece) == 'P' && fc != tc && target == '.') next[fr][tc] = '.';
+                if (ChessRules.isInCheck(next, true)) score += 7;
+                if (Character.toUpperCase(piece) == 'P' && tr == 7) score += 12;
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestMoves.clear();
+                    bestMoves.add(new int[]{fr, fc, tr, tc});
+                } else if (score == bestScore) {
+                    bestMoves.add(new int[]{fr, fc, tr, tc});
+                }
+            }
+        }
+        if (bestMoves.isEmpty()) {
+            state.botMoveAtTick = -1L;
+            checkEndCondition(world, state);
+            return;
+        }
+        int[] move = bestMoves.get(world.getRandom().nextInt(bestMoves.size()));
+        state.botMoveAtTick = -1L;
+        broadcast(world, "Ход бота.");
+        scheduleMove(world, state, move[0], move[1], move[2], move[3], BOT_PLAYER_ID, null);
+    }
+
+    private static int pieceValue(char piece) {
+        switch (Character.toUpperCase(piece)) {
+            case 'Q': return 9;
+            case 'R': return 5;
+            case 'B':
+            case 'N': return 3;
+            case 'P': return 1;
+            default: return 0;
+        }
+    }
+
+    private static void promoteBotPawn(ServerWorld world, BoardState state, char option, int row, int col) {
+        char kind = Character.toUpperCase(option);
+        List<Character> captured = state.blackCapturedPieces;
+        int capturedIndex = -1;
+        for (int i = 0; i < captured.size(); i++) {
+            ChessPieceType candidate = ChessPieceType.fromSymbol(captured.get(i));
+            if (candidate != null && candidate.isWhite() && Character.toUpperCase(captured.get(i)) == kind) {
+                capturedIndex = i;
+                break;
+            }
+        }
+        if (capturedIndex < 0) return;
+        BlockPos pos = piecePos(state, row, col);
+        float yaw = world.getBlockEntity(pos) instanceof ChessFigureBlockEntity entity ? entity.getYawDegrees() : 0.0f;
+        ChessPieceType promoted = ChessPieceType.fromSymbol(Character.toLowerCase(kind));
+        if (promoted == null) return;
+        world.setBlockState(pos, promoted.block().getDefaultState(), 3);
+        if (world.getBlockEntity(pos) instanceof ChessFigureBlockEntity entity) entity.setYawDegrees(yaw);
+        captured.set(capturedIndex, 'p');
+        if (state.blackCaptureOrigin != null) placeCapturedBlock(world, state.blackCaptureOrigin, capturedIndex, 'p');
     }
 
     private static void checkEndCondition(ServerWorld world, BoardState state) {
