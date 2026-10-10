@@ -23,6 +23,8 @@ import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraft.registry.RegistryKey;
+import net.minecraft.registry.Registries;
+import net.minecraft.network.packet.s2c.play.PlaySoundS2CPacket;
 import net.minecraft.world.GameMode;
 
 /** Server-authoritative chess board and match controller. */
@@ -730,7 +732,7 @@ public final class ChessGameManager {
             } else {
                 broadcast(world, "Пат. Ничья.");
                 for (ServerPlayerEntity player : world.getPlayers())
-                    player.playSound(SoundEvents.BLOCK_NOTE_BLOCK_CHIME.value(), 0.9f, 0.75f);
+                    playSoundToPlayer(player, SoundEvents.BLOCK_NOTE_BLOCK_CHIME.value(), 0.9f, 0.75f);
             }
         } else if (inCheck) {
             broadcast(world, "Шах " + (whiteToMove ? "белому" : "чёрному") + " королю!");
@@ -749,15 +751,30 @@ public final class ChessGameManager {
         }
     }
 
+    /**
+     * Play end-state sounds directly to each intended player's client. Entity.playSound()
+     * uses the player as the world sound source, so the source player is excluded by the
+     * normal world broadcast and may not hear their own check/mate/result notification.
+     */
     private static void notifyCheckTeam(ServerWorld world, boolean white, String message, net.minecraft.sound.SoundEvent sound) {
         for (ServerPlayerEntity player : world.getPlayers()) {
             net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
-            if (team != null && (team.getName().equals("white") || team.getName().equals("black"))
-                && white != team.getName().equals("white")) continue;
+            if (team == null || !(team.getName().equals("white") || team.getName().equals("black"))) continue;
+            if (white != team.getName().equals("white")) continue;
             player.sendMessage(Text.literal(message).formatted(
                 message.contains("МАТ") ? Formatting.DARK_RED : Formatting.RED, Formatting.BOLD), true);
-            player.playSound(sound, 0.9f, message.contains("ШАХ") ? 1.1f : 1.0f);
+            playSoundToPlayer(player, sound, 0.9f, message.contains("ШАХ") ? 1.1f : 1.0f);
         }
+    }
+
+    private static void playSoundToPlayer(ServerPlayerEntity player, net.minecraft.sound.SoundEvent sound,
+                                           float volume, float pitch) {
+        player.networkHandler.sendPacket(new PlaySoundS2CPacket(
+            Registries.SOUND_EVENT.getEntry(sound),
+            SoundCategory.PLAYERS,
+            player.getX(), player.getY(), player.getZ(),
+            volume, pitch, player.getWorld().getRandom().nextLong()
+        ));
     }
 
     private static void announceTurn(ServerWorld world, BoardState state) {
