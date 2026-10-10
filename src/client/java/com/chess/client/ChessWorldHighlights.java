@@ -83,12 +83,6 @@ public final class ChessWorldHighlights {
                 quad(fill, matrix, x1, z1, x2, z2, y, red, green, blue, alpha);
             }
 
-            // Keep the yellow outline close to the model's real footprint/height, not a 1-block cage.
-            VertexConsumer outline = consumers.getBuffer(RenderLayer.getLines());
-            Box modelBounds = new Box(selected.getX() + 0.30, boardOrigin.getY() + 0.13, selected.getZ() + 0.30,
-                selected.getX() + 0.70, boardOrigin.getY() + 0.99, selected.getZ() + 0.70)
-                .offset(-camera.x, -camera.y, -camera.z);
-            WorldRenderer.drawBox(matrices, outline, modelBounds, 1.0f, 0.96f, 0.08f, 0.95f);
         }
 
         if (checkKingSquare != null) {
