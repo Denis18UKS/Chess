@@ -230,8 +230,10 @@ public final class ChessGameManager {
 
     private static void autoConfigureCaptures(ServerWorld world, BoardState state) {
         if (!state.configured) return;
-        state.whiteCaptureOrigin = state.origin.add(0, 0, -3);
-        state.blackCaptureOrigin = state.origin.add(0, 0, 10);
+        // Black pieces start on rows 0-1; white pieces start on rows 6-7.
+        // Captures belong on the capturer's own side: white at the far (south) end, black at the near (north) end.
+        state.whiteCaptureOrigin = state.origin.add(0, 0, 10);
+        state.blackCaptureOrigin = state.origin.add(0, 0, -3);
         for (int row = 0; row < 2; row++) for (int col = 0; col < 8; col++) {
             BlockPos whiteTile = state.whiteCaptureOrigin.add(col, 0, row);
             BlockPos blackTile = state.blackCaptureOrigin.add(col, 0, row);
