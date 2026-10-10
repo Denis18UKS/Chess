@@ -4,13 +4,19 @@
   "version": "${version}",
   "name": "Chess",
   "description": "Minecraft 1.20.1 chess minigame with a live 2D board, animated 3D figures, teams and field tools.",
-  "authors": ["Denis Karpov"],
+  "authors": [
+    "Denis Karpov"
+  ],
   "license": "CC0-1.0",
   "icon": "assets/chess/icon.png",
   "environment": "*",
   "entrypoints": {
-    "main": ["com.chess.ChessMod"],
-    "client": ["com.chess.client.ChessModClient"]
+    "main": [
+      "com.chess.ChessMod"
+    ],
+    "client": [
+      "com.chess.client.ChessModClient"
+    ]
   },
   "depends": {
     "fabricloader": ">=0.15.0",
@@ -18,5 +24,12 @@
     "java": ">=17",
     "fabric-api": "*",
     "geckolib": ">=4.4.9"
-  }
+  },
+  "mixins": [
+    "modid.mixins.json",
+    {
+      "config": "modid.client.mixins.json",
+      "environment": "client"
+    }
+  ]
 }
