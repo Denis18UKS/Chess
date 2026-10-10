@@ -26,7 +26,6 @@
     "geckolib": ">=4.4.9"
   },
   "mixins": [
-    "modid.mixins.json",
     {
       "config": "modid.client.mixins.json",
       "environment": "client"
