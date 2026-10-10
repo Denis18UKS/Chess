@@ -71,6 +71,7 @@ public class ChessBoardScreen extends Screen {
         promotionChoices = choices == null || choices.isEmpty() ? "QRBN" : choices;
         whiteCaptures = whiteCaptured == null ? "" : whiteCaptured;
         blackCaptures = blackCaptured == null ? "" : blackCaptured;
+        ChessWorldHighlights.updateBoardState(cells, whiteTurn, ruleMode, threeD, origin);
         if (activeScreen != null && !activeScreen.selectionInitialized) activeScreen.autoSelectHeldPiece();
     }
 
