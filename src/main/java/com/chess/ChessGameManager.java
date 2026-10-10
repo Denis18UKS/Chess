@@ -210,7 +210,7 @@ public final class ChessGameManager {
 
     public static void handleAdminAction(ServerPlayerEntity player, String action, BlockPos pos,
                                          String a, String b, String c, int v1, int v2, int v3) {
-        if (!"get_settings".equals(action) && !player.hasPermissionLevel(2)) {
+        if (!"get_settings".equals(action) && !player.getCommandSource().hasPermissionLevel(2)) {
             tell(player, "Для настройки панели требуется право оператора.");
             return;
         }
