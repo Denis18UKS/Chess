@@ -40,6 +40,16 @@ public class ChessModClient implements ClientModInitializer {
 
         UseBlockCallback.EVENT.register((player, world, hand, hit) -> {
             var stack = player.getStackInHand(hand);
+            if (world.isClient && stack.isOf(ModItems.CHESS_CONFIG_TOOL)) {
+                MinecraftClient client = MinecraftClient.getInstance();
+                client.setScreen(new ChessConfiguratorScreen(client.currentScreen, hit.getBlockPos()));
+                return ActionResult.SUCCESS;
+            }
+            if (world.isClient && world.getBlockState(hit.getBlockPos()).isOf(ModBlocks.CHESS_SETTINGS_PANEL)) {
+                MinecraftClient client = MinecraftClient.getInstance();
+                client.setScreen(new ChessSettingsScreen(client.currentScreen, hit.getBlockPos()));
+                return ActionResult.SUCCESS;
+            }
             // Let the figure block's own onUse handler apply the dye in both 2D and 3D worlds.
             if (stack.getItem() instanceof net.minecraft.item.DyeItem) return ActionResult.PASS;
             if (world.isClient && ChessClientNetwork.threeDimensional && !player.isSneaking()) {
