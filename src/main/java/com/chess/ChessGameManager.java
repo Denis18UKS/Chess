@@ -321,8 +321,8 @@ public final class ChessGameManager {
         for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
             BoardState state = entry.getValue();
             ServerWorld world = server.getWorld(entry.getKey());
-            if (world == null || !state.running || !world.getRegistryKey().equals(player.getWorld().getRegistryKey())) continue;
-            if (state.paused || !state.participants.contains(player.getUuid())) continue;
+            if (world == null || !state.running || !state.participants.contains(player.getUuid())) continue;
+            if (state.paused) continue;
             net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
             if (team == null || !(team.getName().equals("white") || team.getName().equals("black"))) continue;
 
@@ -421,7 +421,12 @@ public final class ChessGameManager {
             broadcast(sourceWorld, "Возврат в лобби пропущен: измерение лобби недоступно.");
             return;
         }
-        List<ServerPlayerEntity> players = new ArrayList<>(sourceWorld.getPlayers());
+        // Return every online match participant even if they were moved to a separate
+        // dimension by a configured team TP. Also return observers who stayed at the board.
+        Set<UUID> returnIds = new HashSet<>(board(sourceWorld).participants);
+        for (ServerPlayerEntity player : sourceWorld.getPlayers()) returnIds.add(player.getUuid());
+        List<ServerPlayerEntity> players = server.getPlayerManager().getPlayerList().stream()
+            .filter(player -> returnIds.contains(player.getUuid())).toList();
         String tag = "chess_lobby_return";
         for (ServerPlayerEntity player : players) {
             player.addCommandTag(tag);
