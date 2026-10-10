@@ -15,6 +15,7 @@ import net.minecraft.util.Identifier;
 public final class ModBlocks {
     public static final Block CHESS_WHITE_SQUARE = register(new ChessSquareBlock(AbstractBlock.Settings.copy(Blocks.STONE)), "chess_white_square", true);
     public static final Block CHESS_BLACK_SQUARE = register(new ChessSquareBlock(AbstractBlock.Settings.copy(Blocks.STONE)), "chess_black_square", true);
+    public static final Block CHESS_SETTINGS_PANEL = register(new ChessSettingsPanelBlock(), "chess_settings_panel", true);
 
     public static final Block CHESS_WHITE_KING = piece("chess_white_king");
     public static final Block CHESS_WHITE_FERZ = piece("chess_white_ferz");
