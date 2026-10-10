@@ -23,7 +23,7 @@ public class ChessFigureBlock extends BlockWithEntity {
     // Figure blocks are located one block above a 2px-high board tile.
     // Renderer moves only the visual model down to the tile surface; the
     // invisible block entity itself keeps the board's logical coordinates.
-    private static final VoxelShape OUTLINE = createCuboidShape(3, -14, 3, 13, 2, 13);
+    private static final VoxelShape OUTLINE = createCuboidShape(1, -14, 1, 15, 16, 15);
 
     public ChessFigureBlock(Settings settings) { super(settings.nonOpaque()); }
 
@@ -52,10 +52,16 @@ public class ChessFigureBlock extends BlockWithEntity {
     }
 
     @Override
-    public VoxelShape getCollisionShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
-        // The board piece has a narrow real hitbox from the board surface to the model top,
-        // without a tall invisible cage above it.
+    public VoxelShape getRaycastShape(BlockState state, BlockView world, BlockPos pos) {
+        // Ray selection uses the full visible figure height, including the model portion
+        // rendered below the logical block's Y level.
         return OUTLINE;
+    }
+
+    @Override
+    public VoxelShape getCollisionShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+        // Figures must be clickable but must not behave like an invisible wall.
+        return net.minecraft.util.shape.VoxelShapes.empty();
     }
 
     private static int dyeRgb(net.minecraft.util.DyeColor color) {
