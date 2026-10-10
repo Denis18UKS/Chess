@@ -59,6 +59,17 @@ public final class ChessClientNetwork {
             });
         });
 
+        ClientPlayNetworking.registerGlobalReceiver(ChessNetwork.BOARD_MOVE_ANIMATION, (client, handler, buf, responseSender) -> {
+            int fromRow = buf.readInt();
+            int fromCol = buf.readInt();
+            int toRow = buf.readInt();
+            int toCol = buf.readInt();
+            char piece = buf.readChar();
+            boolean knight = buf.readBoolean();
+            int durationTicks = buf.readInt();
+            client.execute(() -> ChessBoardScreen.beginAnimatedMove(fromRow, fromCol, toRow, toCol, piece, knight, durationTicks));
+        });
+
         ClientPlayNetworking.registerGlobalReceiver(ChessNetwork.HIGHLIGHTS, (client, handler, buf, responseSender) -> {
             BlockPos selected = buf.readBlockPos();
             int row = buf.readInt();
