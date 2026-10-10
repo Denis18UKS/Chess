@@ -15,6 +15,26 @@ public class ChessBoardScreen extends Screen {
     private static boolean threeDimensional, developerMode, promotionPending;
     private static String promotionChoices = "QRBN";
     private static ChessBoardScreen activeScreen;
+    private static AnimatedMove animatedMove;
+
+    private static final class AnimatedMove {
+        final int fromRow, fromCol, toRow, toCol, durationTicks;
+        final char piece;
+        final boolean knight;
+        final long startedNanos;
+        AnimatedMove(int fr, int fc, int tr, int tc, char piece, boolean knight, int durationTicks) {
+            this.fromRow = fr; this.fromCol = fc; this.toRow = tr; this.toCol = tc;
+            this.piece = piece; this.knight = knight; this.durationTicks = Math.max(1, durationTicks);
+            this.startedNanos = System.nanoTime();
+        }
+    }
+
+    public static void beginAnimatedMove(int fromRow, int fromCol, int toRow, int toCol, char piece, boolean knight, int durationTicks) {
+        if (inside(fromRow, fromCol) && inside(toRow, toCol) && piece != '.')
+            animatedMove = new AnimatedMove(fromRow, fromCol, toRow, toCol, piece, knight, durationTicks);
+    }
+
+    private static boolean inside(int row, int col) { return row >= 0 && row < 8 && col >= 0 && col < 8; }
 
     private final String heldItemPath;
     private boolean selectionInitialized;
@@ -30,7 +50,14 @@ public class ChessBoardScreen extends Screen {
                                       boolean whitesTurn, String rules, String mode, BlockPos boardOrigin,
                                       boolean threeD, boolean devMode, boolean promotion, String choices,
                                       String whiteCaptured, String blackCaptured) {
-        if (board != null && board.length() == 64) cells = board;
+        if (board != null && board.length() == 64) {
+            cells = board;
+            if (animatedMove != null
+                && cells.charAt(animatedMove.fromRow * 8 + animatedMove.fromCol) == '.'
+                && cells.charAt(animatedMove.toRow * 8 + animatedMove.toCol) == animatedMove.piece) {
+                animatedMove = null;
+            }
+        }
         configured = hasBoard;
         running = isRunning;
         paused = isPaused;
@@ -92,8 +119,10 @@ public class ChessBoardScreen extends Screen {
                 if (row == toRow && col == toCol) color = 0xFF4AAB89;
                 context.fill(x, y, x + cell, y + cell, color);
                 char piece = cells.charAt(row * 8 + col);
-                if (piece != '.') {
-                    int pieceColor = Character.isUpperCase(piece) ? 0xFFFFFFFF : 0xFF202020;
+                boolean movingSource = animatedMove != null
+                    && row == animatedMove.fromRow && col == animatedMove.fromCol
+                    && cells.charAt(row * 8 + col) == animatedMove.piece;
+                if (piece != '.' && !movingSource) {
                     String iconKey = iconKey(piece);
                     context.drawTexture(new net.minecraft.util.Identifier("chess", "textures/item/" + iconKey + ".png"),
                         x + cell / 2 - 8, y + cell / 2 - 8, 16, 16, 0, 0, 32, 32, 32, 32);
@@ -102,6 +131,8 @@ public class ChessBoardScreen extends Screen {
                 if (col == 0) context.drawTextWithShadow(textRenderer, String.valueOf(8 - row), boardX - 10, y + (cell - 8) / 2, 0xFFCCCCCC);
             }
         }
+
+        renderAnimatedPiece(context, boardX, boardY, cell);
 
         String hint = !configured
             ? "Поставьте инструмент Chess Board Configurator на первую клетку"
@@ -159,6 +190,32 @@ public class ChessBoardScreen extends Screen {
             }
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    private void renderAnimatedPiece(DrawContext context, int boardX, int boardY, int cell) {
+        AnimatedMove move = animatedMove;
+        if (move == null) return;
+        long durationNanos = (long)move.durationTicks * 50_000_000L;
+        double raw = Math.min(1.0, Math.max(0.0, (System.nanoTime() - move.startedNanos) / (double)durationNanos));
+        double eased = raw * raw * (3.0 - 2.0 * raw);
+        double row, col;
+        if (move.knight && Math.abs(move.toRow - move.fromRow) > 0 && Math.abs(move.toCol - move.fromCol) > 0) {
+            boolean longOnCol = Math.abs(move.toCol - move.fromCol) > Math.abs(move.toRow - move.fromRow);
+            double longProgress = Math.min(1.0, raw / 0.64);
+            longProgress = longProgress * longProgress * (3.0 - 2.0 * longProgress);
+            double shortProgress = Math.max(0.0, (raw - 0.64) / 0.36);
+            shortProgress = shortProgress * shortProgress * (3.0 - 2.0 * shortProgress);
+            col = move.fromCol + (move.toCol - move.fromCol) * (longOnCol ? longProgress : shortProgress);
+            row = move.fromRow + (move.toRow - move.fromRow) * (longOnCol ? shortProgress : longProgress);
+        } else {
+            row = move.fromRow + (move.toRow - move.fromRow) * eased;
+            col = move.fromCol + (move.toCol - move.fromCol) * eased;
+        }
+        int size = Math.min(22, cell - 4);
+        int x = (int)Math.round(boardX + (col + 0.5) * cell - size / 2.0);
+        int y = (int)Math.round(boardY + (row + 0.5) * cell - size / 2.0);
+        context.drawTexture(new net.minecraft.util.Identifier("chess", "textures/item/" + iconKey(move.piece) + ".png"),
+            x, y, size, size, 0, 0, 32, 32, 32, 32);
     }
 
     private String iconKey(char piece) {
