@@ -126,6 +126,7 @@ public final class ChessGameManager {
     public static void start(ServerWorld world) {
         BoardState state = board(world);
         if (!state.configured) throw new IllegalStateException("Сначала привяжите поле предметом Chess Board Configurator.");
+        if (state.running) throw new IllegalStateException("Партия уже запущена. Для новой партии сначала завершите текущую.");
         if (state.matchEnded || boardIsEmpty(world, state)) resetBoard(world);
         ChessWorldConfig config = ChessWorldConfig.get(world.getServer());
         state.matchMode = config.getMatchMode();
@@ -512,6 +513,10 @@ public final class ChessGameManager {
     public static void resetBoard(ServerWorld world) {
         BoardState state = board(world);
         if (!state.configured) throw new IllegalStateException("Сначала привяжите доску командой /chess board set <x y z> или конфигуратором.");
+        // Manual figure reset during the post-game delay must not cancel the already
+        // scheduled lobby return. A regular in-game reset never creates such a delay.
+        boolean keepLobbyReturn = state.matchEnded && state.returnToLobbyAtTick >= 0L;
+        long savedLobbyReturnTick = state.returnToLobbyAtTick;
         state.pending = null;
         state.promotionPending = false;
         state.promotionPlayerId = null;
@@ -519,9 +524,11 @@ public final class ChessGameManager {
         state.whiteTurn = true;
         state.paused = false;
         state.pausedByDisconnect = false;
+        state.disconnectedPlayerId = null;
+        state.disconnectedTeamName = "";
         state.running = false;
-        state.matchEnded = false;
-        state.returnToLobbyAtTick = -1L;
+        state.matchEnded = keepLobbyReturn;
+        state.returnToLobbyAtTick = keepLobbyReturn ? savedLobbyReturnTick : -1L;
         state.matchDeadlineAtTick = -1L;
         state.botMoveAtTick = -1L;
         state.whiteKingMoved = state.blackKingMoved = false;
