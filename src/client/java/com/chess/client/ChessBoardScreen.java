@@ -165,13 +165,17 @@ public class ChessBoardScreen extends Screen {
                 if (selected != '.' && matchesHeldPiece(selected)) {
                     fromRow = row; fromCol = col; toRow = toCol = -1;
                 }
+            } else if (selected != '.' && matchesHeldPiece(selected)) {
+                // The inventory item locks the type/color, not one specific board square.
+                // Any on-board figure matching this item can become the source piece.
+                fromRow = row;
+                fromCol = col;
+                toRow = toCol = -1;
             } else if (row == fromRow && col == fromCol) {
-                // The held inventory item already defines the selected source piece.
-                // Clicking it again only clears the destination.
                 toRow = toCol = -1;
             } else {
-                // Do not silently switch to a different figure: clicks now always choose a destination.
-                toRow = row; toCol = col;
+                toRow = row;
+                toCol = col;
             }
             return true;
         }
