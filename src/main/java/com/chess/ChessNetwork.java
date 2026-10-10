@@ -23,12 +23,21 @@ public final class ChessNetwork {
     public static final Identifier DEV_SWITCH_TEAM = ChessMod.id("dev_switch_team");
     public static final Identifier PROMOTION = ChessMod.id("promotion_choice");
     public static final Identifier CLOCK_STATE = ChessMod.id("clock_state");
+    public static final Identifier ADMIN_ACTION = ChessMod.id("admin_action");
+    public static final Identifier ADMIN_STATE = ChessMod.id("admin_state");
 
     private ChessNetwork() {}
 
     public static void registerServer() {
         ServerPlayNetworking.registerGlobalReceiver(REQUEST_BOARD, (server, player, handler, buf, responseSender) ->
             server.execute(() -> sendBoard(player)));
+        ServerPlayNetworking.registerGlobalReceiver(ADMIN_ACTION, (server, player, handler, buf, responseSender) -> {
+            String action = buf.readString(64);
+            BlockPos pos = buf.readBlockPos();
+            String a = buf.readString(1024), b = buf.readString(1024), c = buf.readString(1024);
+            int v1 = buf.readInt(), v2 = buf.readInt(), v3 = buf.readInt();
+            server.execute(() -> ChessGameManager.handleAdminAction(player, action, pos, a, b, c, v1, v2, v3));
+        });
         ServerPlayNetworking.registerGlobalReceiver(MOVE, (server, player, handler, buf, responseSender) -> {
             int fr = buf.readInt(), fc = buf.readInt(), tr = buf.readInt(), tc = buf.readInt();
             server.execute(() -> ChessGameManager.tryMove(player, fr, fc, tr, tc));
