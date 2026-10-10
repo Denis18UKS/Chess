@@ -188,7 +188,9 @@ public final class ChessGameManager {
         if (state.blackCaptureOrigin != null) clearCaptureTray(world, state.blackCaptureOrigin);
         autoConfigureCaptures(world, state);
         updateTeamHighlights(world.getServer(), state);
+        syncAllTeamPieces(world.getServer());
         ChessNetwork.broadcastBoard(world);
+        ChessNetwork.broadcastClockState(world);
         broadcast(world, "Доска сброшена. Фигуры расставлены в начальную позицию, первый ход — белые.");
     }
 
