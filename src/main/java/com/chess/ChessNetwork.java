@@ -15,6 +15,7 @@ public final class ChessNetwork {
     public static final Identifier BOARD_STATE = ChessMod.id("board_state");
     public static final Identifier MOVE = ChessMod.id("move");
     public static final Identifier ANIMATE = ChessMod.id("animate_piece");
+    public static final Identifier BOARD_MOVE_ANIMATION = ChessMod.id("board_move_animation");
     public static final Identifier GRAFFITI_CREATE = ChessMod.id("graffiti_create");
     public static final Identifier SELECT_3D = ChessMod.id("select_3d_piece");
     public static final Identifier MOVE_3D = ChessMod.id("move_3d_piece");
@@ -103,6 +104,21 @@ public final class ChessNetwork {
         buf.writeInt(col);
         for (int i = 0; i < 64; i++) buf.writeBoolean(legal != null && i < legal.length && legal[i]);
         ServerPlayNetworking.send(player, HIGHLIGHTS, buf);
+    }
+
+    public static void broadcastMoveStart(ServerWorld world, int fromRow, int fromCol, int toRow, int toCol,
+                                           char piece, boolean knight, int durationTicks) {
+        for (ServerPlayerEntity player : PlayerLookup.world(world)) {
+            PacketByteBuf buf = PacketByteBufs.create();
+            buf.writeInt(fromRow);
+            buf.writeInt(fromCol);
+            buf.writeInt(toRow);
+            buf.writeInt(toCol);
+            buf.writeChar(piece);
+            buf.writeBoolean(knight);
+            buf.writeInt(durationTicks);
+            ServerPlayNetworking.send(player, BOARD_MOVE_ANIMATION, buf);
+        }
     }
 
     public static void broadcastAnimation(ServerWorld world, BlockPos pos, String animation) {
