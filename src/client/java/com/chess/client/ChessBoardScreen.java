@@ -119,6 +119,8 @@ public class ChessBoardScreen extends Screen {
                 if (row == fromRow && col == fromCol) color = 0xFFDBB43F;
                 if (row == toRow && col == toCol) color = 0xFF4AAB89;
                 context.fill(x, y, x + cell, y + cell, color);
+                if (ChessWorldHighlights.isCheckCell(row, col))
+                    context.fill(x + 1, y + 1, x + cell - 1, y + cell - 1, 0x78FF1717);
                 char piece = cells.charAt(row * 8 + col);
                 boolean movingSource = animatedMove != null
                     && row == animatedMove.fromRow && col == animatedMove.fromCol
