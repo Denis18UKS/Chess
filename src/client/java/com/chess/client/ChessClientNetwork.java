@@ -14,6 +14,13 @@ public final class ChessClientNetwork {
     private ChessClientNetwork() {}
 
     public static void registerClient() {
+        ClientPlayNetworking.registerGlobalReceiver(ChessNetwork.ADMIN_STATE, (client, handler, buf, responseSender) -> {
+            int mode = buf.readInt();
+            int duration = buf.readInt();
+            int rule = buf.readInt();
+            client.execute(() -> ChessSettingsScreen.receiveSettings(mode, duration, rule));
+        });
+
         ClientPlayNetworking.registerGlobalReceiver(ChessNetwork.BOARD_STATE, (client, handler, buf, responseSender) -> {
             String cells = buf.readString(64);
             boolean configured = buf.readBoolean();
