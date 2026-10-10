@@ -73,6 +73,18 @@ public final class ChessNetwork {
         });
     }
 
+    public static void sendAdminState(ServerPlayerEntity player, ChessGameManager.BoardState state) {
+        PacketByteBuf buf = PacketByteBufs.create();
+        int mode = state.matchMode == ChessGameManager.MatchMode.ONE_ONE ? 0
+            : state.matchMode == ChessGameManager.MatchMode.TWO_TWO ? 1 : 2;
+        int rule = state.ruleMode == ChessGameManager.RuleMode.NO_REALISM ? 0
+            : state.ruleMode == ChessGameManager.RuleMode.REALISM ? 1 : 2;
+        buf.writeInt(mode);
+        buf.writeInt(state.matchDurationMinutes);
+        buf.writeInt(rule);
+        ServerPlayNetworking.send(player, ADMIN_STATE, buf);
+    }
+
     public static void sendBoard(ServerPlayerEntity player) {
         World world = player.getWorld();
         ChessGameManager.BoardState state = ChessGameManager.board(world);
