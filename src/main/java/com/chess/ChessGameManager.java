@@ -295,14 +295,22 @@ public final class ChessGameManager {
             // UUID was the player whose disconnect triggered the automatic pause.
             for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
                 BoardState state = entry.getValue();
-                if (!state.pausedByDisconnect || !player.getUuid().equals(state.disconnectedPlayerId)) continue;
+                if (!state.pausedByDisconnect) continue;
+                boolean keyPlayerReturned = player.getUuid().equals(state.disconnectedPlayerId);
+                net.minecraft.scoreboard.AbstractTeam joiningTeam = player.getScoreboardTeam();
+                boolean teammateReturned = state.matchMode == MatchMode.TWO_TWO
+                    && state.participants.contains(player.getUuid())
+                    && joiningTeam != null && joiningTeam.getName().equals(state.disconnectedTeamName);
+                if (!keyPlayerReturned && !teammateReturned) continue;
                 state.paused = false;
                 state.pausedByDisconnect = false;
                 state.disconnectedPlayerId = null;
                 state.disconnectedTeamName = "";
                 ServerWorld boardWorld = server.getWorld(entry.getKey());
                 if (boardWorld != null) {
-                    broadcast(boardWorld, "Ключевой игрок вернулся. Партия автоматически продолжена.");
+                    broadcast(boardWorld, teammateReturned && !keyPlayerReturned
+                        ? "Игрок команды вернулся. Партия автоматически продолжена."
+                        : "Ключевой игрок вернулся. Партия автоматически продолжена.");
                     updateTurnGlow(boardWorld, state);
                     ChessNetwork.broadcastClockState(boardWorld);
                 }
@@ -328,9 +336,12 @@ public final class ChessGameManager {
             if (team == null || !(team.getName().equals("white") || team.getName().equals("black"))) continue;
 
             boolean shouldPause = false;
-            if (state.matchMode == MatchMode.ONE_ONE || state.matchMode == MatchMode.ONE_VS_BOT) {
-                // Only one human is expected on each side in 1v1 (or on white in bot mode).
+            if (state.matchMode == MatchMode.ONE_ONE) {
+                // The disconnect of either human participant pauses a 1v1 match.
                 shouldPause = true;
+            } else if (state.matchMode == MatchMode.ONE_VS_BOT) {
+                // Black is the computer-controlled side and never causes an auto-pause.
+                shouldPause = team.getName().equals("white");
             } else if (state.matchMode == MatchMode.TWO_TWO) {
                 // In 2v2 pause only when the whole team is offline.
                 boolean anyTeamMateOnline = server.getPlayerManager().getPlayerList().stream()
@@ -886,6 +897,10 @@ public final class ChessGameManager {
         BoardState state = board(world);
         state.matchDurationMinutes = Math.max(0, Math.min(1440, minutes));
         ChessWorldConfig.get(world.getServer()).setMatchDurationMinutes(state.matchDurationMinutes);
+        // An operator changing the command during a live game restarts the whole-match
+        // deadline from now; panel edits during an active game are instead queued for next time.
+        state.matchDeadlineAtTick = state.running && state.matchDurationMinutes > 0
+            ? serverTick(world.getServer()) + state.matchDurationMinutes * 1200L : -1L;
         broadcast(world, state.matchDurationMinutes == 0 ? "Общий лимит времени партии отключён." :
             "Общий лимит времени партии: " + state.matchDurationMinutes + " мин.");
     }
