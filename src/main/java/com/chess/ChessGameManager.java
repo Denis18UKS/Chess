@@ -97,11 +97,13 @@ public final class ChessGameManager {
         state.whiteTurn = true;
         state.pending = null;
         state.promotionPending = false;
+        state.whiteClockTicks = state.blackClockTicks = state.clockMaxTicks();
         autoConfigureCaptures(world, state);
         broadcast(world, "Шахматная партия началась. Первый ход — белые.");
         updateTeamHighlights(world.getServer(), state);
         syncAllTeamPieces(world.getServer());
         ChessNetwork.broadcastBoard(world);
+        ChessNetwork.broadcastClockState(world);
     }
 
     public static void stop(ServerWorld world, String message) {
@@ -111,6 +113,7 @@ public final class ChessGameManager {
         state.pending = null;
         syncAllTeamPieces(world.getServer());
         ChessNetwork.broadcastBoard(world);
+        ChessNetwork.broadcastClockState(world);
         broadcast(world, message);
     }
 
@@ -119,6 +122,16 @@ public final class ChessGameManager {
         if (!state.running) throw new IllegalStateException("Партия не запущена.");
         state.paused = !state.paused;
         broadcast(world, state.paused ? "Шахматная партия приостановлена." : "Шахматная партия продолжена.");
+        ChessNetwork.broadcastClockState(world);
+    }
+
+    public static void configureClock(ServerWorld world, int minutes) {
+        BoardState state = board(world);
+        state.clockMinutes = Math.max(1, Math.min(180, minutes));
+        state.whiteClockTicks = state.blackClockTicks = state.clockMaxTicks();
+        broadcast(world, "Шахматный таймер установлен: " + state.clockMinutes + " мин. на каждую команду. Шкала опыта показывает оставшееся время.");
+        ChessNetwork.broadcastClockState(world);
+        ChessNetwork.broadcastBoard(world);
     }
 
     public static void setRuleMode(ServerWorld world, RuleMode mode) {
@@ -126,6 +139,7 @@ public final class ChessGameManager {
         state.ruleMode = mode;
         broadcast(world, "Режим правил: " + mode.name().toLowerCase() + ".");
         ChessNetwork.broadcastBoard(world);
+        ChessNetwork.broadcastClockState(world);
     }
 
     public static void resetBoard(ServerWorld world) {
@@ -142,6 +156,7 @@ public final class ChessGameManager {
         state.whiteLeftRookMoved = state.whiteRightRookMoved = false;
         state.blackLeftRookMoved = state.blackRightRookMoved = false;
         state.enPassantRow = state.enPassantCol = -1;
+        state.whiteClockTicks = state.blackClockTicks = state.clockMaxTicks();
         state.whiteCapturedPieces.clear();
         state.blackCapturedPieces.clear();
         state.selected3DPieces.clear();
@@ -604,7 +619,25 @@ public final class ChessGameManager {
         for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
             ServerWorld world = server.getWorld(entry.getKey());
             BoardState state = entry.getValue();
-            if (world == null || state.pending == null || tick < state.pending.executeAt) continue;
+            if (world == null) continue;
+            if (tick % 20L == 0L) {
+                if (state.running && !state.paused && !state.promotionPending
+                    && state.ruleMode != RuleMode.NO_REALISM) {
+                    boolean losingWhite = state.whiteTurn;
+                    if (losingWhite) state.whiteClockTicks = Math.max(0L, state.whiteClockTicks - 20L);
+                    else state.blackClockTicks = Math.max(0L, state.blackClockTicks - 20L);
+                    long remaining = losingWhite ? state.whiteClockTicks : state.blackClockTicks;
+                    if (remaining <= 0L) {
+                        state.running = false;
+                        broadcast(world, "Время команды " + (losingWhite ? "white" : "black") + " вышло.");
+                        notifyCheckTeam(world, losingWhite, "ПРОИГРЫШ", SoundEvents.ENTITY_VILLAGER_NO);
+                        notifyCheckTeam(world, !losingWhite, "ПОБЕДА", SoundEvents.UI_TOAST_CHALLENGE_COMPLETE);
+                        syncAllTeamPieces(server);
+                    }
+                }
+                ChessNetwork.broadcastClockState(world);
+            }
+            if (state.pending == null || tick < state.pending.executeAt) continue;
             PendingMove move = state.pending;
             ChessPieceType sourcePiece = ChessPieceType.fromBlock(world.getBlockState(move.from));
             if (sourcePiece == null || sourcePiece != move.type) {
@@ -655,6 +688,8 @@ public final class ChessGameManager {
             for (ServerPlayerEntity player : world.getPlayers())
                 ChessNetwork.sendHighlights(player, BlockPos.ORIGIN, -1, -1, new boolean[64]);
             ChessNetwork.broadcastBoard(world);
+            ChessNetwork.broadcastClockState(world);
+            if (!state.running) syncAllTeamPieces(server);
         }
     }
 
@@ -682,6 +717,8 @@ public final class ChessGameManager {
             broadcast(world, "Шах " + (whiteToMove ? "белому" : "чёрному") + " королю!");
             notifyCheckTeam(world, whiteToMove, "ШАХ", SoundEvents.BLOCK_NOTE_BLOCK_BELL.value());
         }
+        ChessNetwork.broadcastClockState(world);
+        if (!state.running) syncAllTeamPieces(world.getServer());
     }
 
     private static void tellPlayerByUuid(ServerWorld world, UUID uuid, String message) {
@@ -734,6 +771,10 @@ public final class ChessGameManager {
         public boolean whiteTurn = true;
         public RuleMode ruleMode = RuleMode.REALISM;
         public MatchMode matchMode = MatchMode.ONE_ONE;
+        public int clockMinutes = 10;
+        public long whiteClockTicks = 12000L, blackClockTicks = 12000L;
+
+        public long clockMaxTicks() { return clockMinutes * 1200L; }
         public boolean whiteKingMoved, blackKingMoved;
         public boolean whiteLeftRookMoved, whiteRightRookMoved, blackLeftRookMoved, blackRightRookMoved;
         public int enPassantRow = -1, enPassantCol = -1;
