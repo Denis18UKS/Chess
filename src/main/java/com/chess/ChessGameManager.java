@@ -42,6 +42,7 @@ public final class ChessGameManager {
     private static final Set<UUID> KIT_SLOT_WARNED = new HashSet<>();
     private static final Set<UUID> CHESS_GLOWING = new HashSet<>();
     private static final Map<String, ChessWorldConfig.TriggerZone> ACTIVE_ZONE_VISITS = new HashMap<>();
+    private static final Set<UUID> DISCONNECTED_DURING_ACTIVE_MATCH = new HashSet<>();
 
     private ChessGameManager() {}
 
@@ -264,6 +265,169 @@ public final class ChessGameManager {
         int value = Math.max(0, Math.min(3600, seconds));
         ChessWorldConfig.get(server).setLobbyDelaySeconds(value);
         server.getPlayerManager().broadcast(Text.literal("Задержка возврата в лобби установлена: " + value + " сек."), false);
+    }
+
+    public static void handlePlayerJoin(ServerPlayerEntity player) {
+        MinecraftServer server = player.getServer();
+        if (server == null) return;
+        ChessWorldConfig config = ChessWorldConfig.get(server);
+        boolean known = config.hasSeenPlayer(player.getUuid());
+        boolean returningDuringGame = DISCONNECTED_DURING_ACTIVE_MATCH.remove(player.getUuid());
+        config.rememberPlayer(player.getUuid());
+
+        boolean anyActiveMatch = BOARDS.values().stream().anyMatch(s -> s.running);
+        if (!anyActiveMatch || !returningDuringGame) {
+            teleportPlayerToLobby(player);
+        } else {
+            // Rejoining mid-match: restore the previous position, and resume only if this
+            // UUID was the player whose disconnect triggered the automatic pause.
+            for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
+                BoardState state = entry.getValue();
+                if (!state.pausedByDisconnect || !player.getUuid().equals(state.disconnectedPlayerId)) continue;
+                state.paused = false;
+                state.pausedByDisconnect = false;
+                state.disconnectedPlayerId = null;
+                state.disconnectedTeamName = "";
+                ServerWorld boardWorld = server.getWorld(entry.getKey());
+                if (boardWorld != null) {
+                    broadcast(boardWorld, "Ключевой игрок вернулся. Партия автоматически продолжена.");
+                    updateTurnGlow(boardWorld, state);
+                    ChessNetwork.broadcastClockState(boardWorld);
+                }
+            }
+        }
+    }
+
+    public static void handlePlayerDisconnect(ServerPlayerEntity player) {
+        MinecraftServer server = player.getServer();
+        if (server == null) return;
+        for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
+            BoardState state = entry.getValue();
+            ServerWorld world = server.getWorld(entry.getKey());
+            if (world == null || !state.running || world.getRegistryKey() != player.getWorld().getRegistryKey()) continue;
+            net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
+            if (team == null || !(team.getName().equals("white") || team.getName().equals("black"))) continue;
+
+            boolean shouldPause = false;
+            if (state.matchMode == MatchMode.ONE_ONE || state.matchMode == MatchMode.ONE_VS_BOT) {
+                // A 1v1 team has one roster member. A player disconnecting from that roster
+                // temporarily pauses the whole match until this same UUID returns.
+                shouldPause = team.getPlayerList().size() <= 1;
+            } else if (state.matchMode == MatchMode.TWO_TWO) {
+                // In 2v2, pause only if every roster member of this team is now offline.
+                boolean anyTeamMateOnline = server.getPlayerManager().getPlayerList().stream()
+                    .anyMatch(other -> !other.getUuid().equals(player.getUuid())
+                        && team.getPlayerList().contains(other.getEntityName()));
+                shouldPause = !anyTeamMateOnline;
+            }
+            if (!shouldPause) continue;
+            state.paused = true;
+            state.pausedByDisconnect = true;
+            state.disconnectedPlayerId = player.getUuid();
+            state.disconnectedTeamName = team.getName();
+            DISCONNECTED_DURING_ACTIVE_MATCH.add(player.getUuid());
+            broadcast(world, "Пауза: игрок команды " + team.getName()
+                + " отключился. Игра продолжится автоматически после его возвращения.");
+            updateTurnGlow(world, state);
+            ChessNetwork.broadcastClockState(world);
+            break;
+        }
+    }
+
+    private static void teleportPlayerToLobby(ServerPlayerEntity player) {
+        ChessWorldConfig.SavedPos lobby = ChessWorldConfig.get(player.getServer()).getLocation("lobby");
+        if (lobby == null) return;
+        ServerWorld destination = resolveWorld(player.getServer(), lobby.dimension);
+        if (destination == null) return;
+        player.teleport(destination, lobby.pos.getX() + 0.5, lobby.pos.getY() + 1.0, lobby.pos.getZ() + 0.5,
+            player.getYaw(), player.getPitch());
+    }
+
+    private static ServerWorld resolveWorld(MinecraftServer server, String dimension) {
+        try {
+            return server.getWorld(RegistryKey.of(RegistryKeys.WORLD, new Identifier(dimension)));
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    public static boolean teleportTeamToConfiguredTarget(ServerWorld callerWorld, boolean white) {
+        MinecraftServer server = callerWorld.getServer();
+        String teamName = white ? "white" : "black";
+        ChessWorldConfig.SavedPos target = ChessWorldConfig.get(server).getLocation(teamName);
+        if (target == null) {
+            broadcast(callerWorld, "TP-точка команды " + teamName + " не настроена.");
+            return false;
+        }
+        ServerWorld destination = resolveWorld(server, target.dimension);
+        if (destination == null) {
+            broadcast(callerWorld, "Измерение TP-точки команды " + teamName + " недоступно.");
+            return false;
+        }
+        List<ServerPlayerEntity> members = server.getPlayerManager().getPlayerList().stream()
+            .filter(p -> p.getScoreboardTeam() != null && p.getScoreboardTeam().getName().equals(teamName))
+            .toList();
+        if (members.isEmpty()) return false;
+        String tag = "chess_tp_spread_" + teamName;
+        for (ServerPlayerEntity member : members) {
+            member.addCommandTag(tag);
+            member.teleport(destination, target.pos.getX() + 0.5, target.pos.getY() + 1.0, target.pos.getZ() + 0.5,
+                member.getYaw(), member.getPitch());
+        }
+        spreadTaggedPlayers(server, destination, target.pos, tag, Math.max(8, members.size() * 3));
+        members.forEach(p -> p.getCommandTags().remove(tag));
+        return true;
+    }
+
+    private static void spreadTaggedPlayers(MinecraftServer server, ServerWorld world, BlockPos center,
+                                            String tag, int range) {
+        String command = "spreadplayers " + (center.getX() + 0.5) + " " + (center.getZ() + 0.5)
+            + " 1.5 " + Math.max(4, range) + " false @a[tag=" + tag + "]";
+        try {
+            server.getCommandManager().executeWithPrefix(server.getCommandSource()
+                .withWorld(world).withPosition(new Vec3d(center.getX() + 0.5, center.getY() + 1.0, center.getZ() + 0.5))
+                .withLevel(4), command);
+        } catch (RuntimeException exception) {
+            server.getPlayerManager().broadcast(Text.literal("Не удалось распределить игроков: " + exception.getMessage()), false);
+        }
+    }
+
+    private static void teleportAllToLobby(ServerWorld sourceWorld) {
+        MinecraftServer server = sourceWorld.getServer();
+        ChessWorldConfig.SavedPos lobby = ChessWorldConfig.get(server).getLocation("lobby");
+        if (lobby == null) {
+            broadcast(sourceWorld, "Возврат в лобби пропущен: точка лобби не настроена.");
+            return;
+        }
+        ServerWorld destination = resolveWorld(server, lobby.dimension);
+        if (destination == null) {
+            broadcast(sourceWorld, "Возврат в лобби пропущен: измерение лобби недоступно.");
+            return;
+        }
+        List<ServerPlayerEntity> players = new ArrayList<>(sourceWorld.getPlayers());
+        String tag = "chess_lobby_return";
+        for (ServerPlayerEntity player : players) {
+            player.addCommandTag(tag);
+            player.teleport(destination, lobby.pos.getX() + 0.5, lobby.pos.getY() + 1.0, lobby.pos.getZ() + 0.5,
+                player.getYaw(), player.getPitch());
+        }
+        spreadTaggedPlayers(server, destination, lobby.pos, tag, Math.max(8, players.size() * 3));
+        players.forEach(p -> p.getCommandTags().remove(tag));
+    }
+
+    private static void updateTurnGlow(ServerWorld world, BoardState state) {
+        for (ServerPlayerEntity player : world.getPlayers()) {
+            net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
+            boolean chessTeam = team != null && (team.getName().equals("white") || team.getName().equals("black"));
+            boolean isTurnTeam = chessTeam && state.running && !state.paused
+                && state.whiteTurn == team.getName().equals("white");
+            if (isTurnTeam) {
+                player.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, 40, 0, true, false, true));
+                CHESS_GLOWING.add(player.getUuid());
+            } else if (CHESS_GLOWING.remove(player.getUuid())) {
+                player.removeStatusEffect(StatusEffects.GLOWING);
+            }
+        }
     }
 
     private static void runConfiguredCommand(MinecraftServer server, ServerWorld world,
