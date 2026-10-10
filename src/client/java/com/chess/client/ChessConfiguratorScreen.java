@@ -108,10 +108,10 @@ public final class ChessConfiguratorScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (commandField != null && mouseY >= 77 && mouseY < 131) {
+        if (commandField != null && mouseY >= 77 && mouseY < 112) {
             List<String> found = suggestions();
             int idx = (int)((mouseY - 77) / 18);
-            if (idx >= 0 && idx < Math.min(3, found.size())) {
+            if (idx >= 0 && idx < Math.min(2, found.size())) {
                 commandField.setText(found.get(idx));
                 commandField.setCursorToEnd();
                 commandField.setFocused(true);
@@ -132,7 +132,7 @@ public final class ChessConfiguratorScreen extends Screen {
             Math.max(8, width / 2 - 145), 41, 0xDDDDDD);
 
         List<String> found = suggestions();
-        int count = Math.min(3, found.size());
+        int count = Math.min(2, found.size());
         int sx = Math.max(8, width / 2 - 145);
         for (int i = 0; i < count; i++) {
             int sy = 77 + i * 18;
