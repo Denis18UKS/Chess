@@ -65,8 +65,10 @@ public final class ChessSettingsScreen extends Screen {
 
         addDrawableChild(ButtonWidget.builder(Text.literal("Применить настройки"), b -> apply())
             .dimensions(center - 120, 215, 240, 22).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Начать партию"), b -> startMatch())
+            .dimensions(center - 120, 244, 240, 22).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Закрыть"), b -> close())
-            .dimensions(center - 60, 246, 120, 20).build());
+            .dimensions(center - 60, 273, 120, 20).build());
         var buf = PacketByteBufs.create();
         buf.writeString("get_settings", 64);
         buf.writeBlockPos(panelPos);
@@ -96,6 +98,25 @@ public final class ChessSettingsScreen extends Screen {
         buf.writeInt(DURATIONS[durationIndex]);
         buf.writeInt(ruleIndex);
         ClientPlayNetworking.send(ChessNetwork.ADMIN_ACTION, buf);
+        close();
+    }
+
+    private void startMatch() {
+        var settings = PacketByteBufs.create();
+        settings.writeString("settings", 64);
+        settings.writeBlockPos(panelPos);
+        settings.writeString("", 1024); settings.writeString("", 1024); settings.writeString("", 1024);
+        settings.writeInt(modeIndex);
+        settings.writeInt(DURATIONS[durationIndex]);
+        settings.writeInt(ruleIndex);
+        ClientPlayNetworking.send(ChessNetwork.ADMIN_ACTION, settings);
+
+        var start = PacketByteBufs.create();
+        start.writeString("start_match", 64);
+        start.writeBlockPos(panelPos);
+        start.writeString("", 1024); start.writeString("", 1024); start.writeString("", 1024);
+        start.writeInt(0); start.writeInt(0); start.writeInt(0);
+        ClientPlayNetworking.send(ChessNetwork.ADMIN_ACTION, start);
         close();
     }
 
