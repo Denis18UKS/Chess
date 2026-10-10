@@ -34,6 +34,13 @@ public final class ChessCommands {
                 ctx.getSource().sendFeedback(() -> Text.literal("Chess: 3D режим мира"), false);
                 return 1;
             }))
+            .then(literal("clock").then(argument("minutes", IntegerArgumentType.integer(1, 180))
+                .requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
+                    int minutes = IntegerArgumentType.getInteger(ctx, "minutes");
+                    ChessGameManager.configureClock(ctx.getSource().getWorld(), minutes);
+                    ctx.getSource().sendFeedback(() -> Text.literal("Chess: таймер " + minutes + " минут на сторону"), false);
+                    return 1;
+                })))
             .then(literal("captures").then(literal("autoconfig").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
                 ChessGameManager.autoConfigureCaptures(ctx.getSource().getWorld());
                 return 1;
