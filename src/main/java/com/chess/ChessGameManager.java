@@ -201,6 +201,8 @@ public final class ChessGameManager {
         state.threeDimensional = threeDimensional;
         state.selected3DPieces.clear();
         broadcast(world, threeDimensional ? "Режим 3D включён." : "Режим 2D включён.");
+        for (ServerPlayerEntity player : world.getPlayers())
+            ChessNetwork.sendHighlights(player, BlockPos.ORIGIN, -1, -1, new boolean[64]);
         ChessNetwork.broadcastBoard(world);
     }
 
