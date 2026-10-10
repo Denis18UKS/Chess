@@ -5,7 +5,6 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
 
 /** Shared pawn-promotion chooser for both 2D and 3D matches. */
 public class ChessPromotionScreen extends Screen {
@@ -50,10 +49,16 @@ public class ChessPromotionScreen extends Screen {
         int left = width / 2 - choices.length() * 31;
         for (int i = 0; i < choices.length(); i++) {
             char piece = choices.charAt(i);
-            String model = piece == 'Q' ? "ferz" : piece == 'R' ? "ladya" : piece == 'B' ? "el" : "horse";
-            String side = white ? "white" : "black";
-            context.drawTexture(new Identifier("chess", "textures/item/chess_" + side + "_" + model + ".png"),
-                left + i * 62, height / 2 - 12, 0, 0, 32, 32, 32, 32);
+            String glyph = piece == 'Q' ? (white ? "♕" : "♛")
+                : piece == 'R' ? (white ? "♖" : "♜")
+                : piece == 'B' ? (white ? "♗" : "♝")
+                : (white ? "♘" : "♞");
+            context.getMatrices().push();
+            context.getMatrices().translate(left + i * 62 + 16, height / 2 + 2, 0);
+            context.getMatrices().scale(2.1f, 2.1f, 1.0f);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(glyph), 0, -4,
+                white ? 0xFFF8F2E5 : 0xFF202028);
+            context.getMatrices().pop();
         }
         super.render(context, mouseX, mouseY, delta);
     }
