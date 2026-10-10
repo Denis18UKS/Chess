@@ -314,8 +314,8 @@ public final class ChessGameManager {
         if (server == null) return;
         boolean someMatchActive = BOARDS.values().stream().anyMatch(state -> state.running);
         if (someMatchActive) {
-            // Preserve this player's saved position on rejoin even if they were not in the
-            // board dimension. Only a key chess participant's disconnect can pause a game.
+            // Preserve this player's saved position on rejoin even if they were in the lobby
+            // dimension. Automatic pause remains limited to registered match participants.
             DISCONNECTED_DURING_ACTIVE_MATCH.add(player.getUuid());
         }
         for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
@@ -328,10 +328,10 @@ public final class ChessGameManager {
 
             boolean shouldPause = false;
             if (state.matchMode == MatchMode.ONE_ONE || state.matchMode == MatchMode.ONE_VS_BOT) {
-                // In 1v1 the disconnect of either participant pauses the game until they return.
-                shouldPause = team.getPlayerList().size() <= 1;
+                // Only one human is expected on each side in 1v1 (or on white in bot mode).
+                shouldPause = true;
             } else if (state.matchMode == MatchMode.TWO_TWO) {
-                // In 2v2 pause only if every online roster member of this team has disconnected.
+                // In 2v2 pause only when the whole team is offline.
                 boolean anyTeamMateOnline = server.getPlayerManager().getPlayerList().stream()
                     .anyMatch(other -> !other.getUuid().equals(player.getUuid())
                         && state.participants.contains(other.getUuid())
@@ -452,8 +452,8 @@ public final class ChessGameManager {
                                              ServerPlayerEntity player, BlockPos pos, String command) {
         if (command == null || command.isBlank()) return;
         try {
-            var source = player.getCommandSource().withLevel(4).withWorld(world).withPosition(
-                pos == null ? player.getPos() : net.minecraft.util.math.Vec3d.ofCenter(pos));
+            var source = player.getCommandSource().withLevel(4).withWorld(world)
+                .withPosition(player.getPos());
             server.getCommandManager().executeWithPrefix(source, ChessWorldConfig.cleanCommand(command));
         } catch (RuntimeException exception) {
             player.sendMessage(Text.literal("Команда триггера не выполнена: " + exception.getMessage()), false);
