@@ -124,9 +124,7 @@ public class ChessBoardScreen extends Screen {
                     && row == animatedMove.fromRow && col == animatedMove.fromCol
                     && cells.charAt(row * 8 + col) == animatedMove.piece;
                 if (piece != '.' && !movingSource) {
-                    String iconKey = iconKey(piece);
-                    context.drawTexture(new net.minecraft.util.Identifier("chess", "textures/item/" + iconKey + ".png"),
-                        x + cell / 2 - 8, y + cell / 2 - 8, 16, 16, 0, 0, 32, 32, 32, 32);
+                    drawPieceGlyph(context, piece, x + cell / 2, y + cell / 2, 1.8f);
                 }
                 if (row == 7) context.drawTextWithShadow(textRenderer, String.valueOf((char)('a' + col)), x + cell - 8, boardY + boardSize + 2, 0xFFCCCCCC);
                 if (col == 0) context.drawTextWithShadow(textRenderer, String.valueOf(8 - row), boardX - 10, y + (cell - 8) / 2, 0xFFCCCCCC);
@@ -212,26 +210,34 @@ public class ChessBoardScreen extends Screen {
             row = move.fromRow + (move.toRow - move.fromRow) * eased;
             col = move.fromCol + (move.toCol - move.fromCol) * eased;
         }
-        int size = Math.min(22, cell - 4);
-        int x = (int)Math.round(boardX + (col + 0.5) * cell - size / 2.0);
-        int y = (int)Math.round(boardY + (row + 0.5) * cell - size / 2.0);
-        context.drawTexture(new net.minecraft.util.Identifier("chess", "textures/item/" + iconKey(move.piece) + ".png"),
-            x, y, size, size, 0, 0, 32, 32, 32, 32);
+        int centerX = (int)Math.round(boardX + (col + 0.5) * cell);
+        int centerY = (int)Math.round(boardY + (row + 0.5) * cell);
+        drawPieceGlyph(context, move.piece, centerX, centerY, 1.8f);
     }
 
-    private String iconKey(char piece) {
-        boolean white = Character.isUpperCase(piece);
-        String model;
-        switch (Character.toUpperCase(piece)) {
-            case 'K': model = "king"; break;
-            case 'Q': model = "ferz"; break;
-            case 'R': model = "ladya"; break;
-            case 'B': model = "el"; break;
-            case 'N': model = "horse"; break;
-            case 'P': model = "peshka"; break;
-            default: model = "peshka";
+    private void drawPieceGlyph(DrawContext context, char piece, int centerX, int centerY, float scale) {
+        String glyph;
+        switch (piece) {
+            case 'K': glyph = "♔"; break;
+            case 'Q': glyph = "♕"; break;
+            case 'R': glyph = "♖"; break;
+            case 'B': glyph = "♗"; break;
+            case 'N': glyph = "♘"; break;
+            case 'P': glyph = "♙"; break;
+            case 'k': glyph = "♚"; break;
+            case 'q': glyph = "♛"; break;
+            case 'r': glyph = "♜"; break;
+            case 'b': glyph = "♝"; break;
+            case 'n': glyph = "♞"; break;
+            case 'p': glyph = "♟"; break;
+            default: glyph = "?";
         }
-        return "chess_" + (white ? "white_" : "black_") + model;
+        boolean white = Character.isUpperCase(piece);
+        context.getMatrices().push();
+        context.getMatrices().translate(centerX, centerY, 0);
+        context.getMatrices().scale(scale, scale, 1.0f);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(glyph), 0, -4, white ? 0xFFF8F2E5 : 0xFF202028);
+        context.getMatrices().pop();
     }
 
     private boolean matchesHeldPiece(char piece) {
