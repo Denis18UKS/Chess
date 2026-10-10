@@ -174,6 +174,9 @@ public final class ChessGameManager {
         state.pending = null;
         state.promotionPending = false;
         state.selected3DPieces.clear();
+        state.disconnectedPlayerId = null;
+        state.disconnectedTeamName = "";
+        for (UUID participant : state.participants) DISCONNECTED_DURING_ACTIVE_MATCH.remove(participant);
         state.matchEnded = true;
         state.matchDeadlineAtTick = -1L;
         int delay = ChessWorldConfig.get(world.getServer()).getLobbyDelaySeconds();
@@ -537,6 +540,7 @@ public final class ChessGameManager {
         state.pausedByDisconnect = false;
         state.disconnectedPlayerId = null;
         state.disconnectedTeamName = "";
+        for (UUID participant : state.participants) DISCONNECTED_DURING_ACTIVE_MATCH.remove(participant);
         state.running = false;
         state.matchEnded = keepLobbyReturn;
         state.returnToLobbyAtTick = keepLobbyReturn ? savedLobbyReturnTick : -1L;
