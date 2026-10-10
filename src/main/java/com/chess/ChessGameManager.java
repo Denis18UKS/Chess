@@ -944,6 +944,15 @@ public final class ChessGameManager {
             return;
         }
 
+        scheduleMove(world, state, fr, fc, tr, tc, player.getUuid(), player);
+    }
+
+    private static void scheduleMove(ServerWorld world, BoardState state, int fr, int fc, int tr, int tc,
+                                      UUID moverId, ServerPlayerEntity actor) {
+        char[][] cells = readBoard(world);
+        char moving = cells[fr][fc], target = cells[tr][tc];
+        ChessPieceType type = ChessPieceType.fromSymbol(moving);
+        if (type == null) return;
         BlockPos from = piecePos(state, fr, fc);
         BlockPos to = piecePos(state, tr, tc);
         BlockState movingState = world.getBlockState(from);
@@ -966,12 +975,14 @@ public final class ChessGameManager {
         if (castle && world.getBlockEntity(rookFrom) instanceof ChessFigureBlockEntity rookEntity)
             rookEntity.beginMove(rookTo, animationTicks);
         state.pending = new PendingMove(from, to, movingState, epCapture, rookFrom, rookTo, rookState,
-            type, fr, fc, tr, tc, movingYaw, rookYaw, capturedSymbol, serverTick(world.getServer()) + animationTicks, player.getUuid());
+            type, fr, fc, tr, tc, movingYaw, rookYaw, capturedSymbol,
+            serverTick(world.getServer()) + animationTicks, moverId);
         ChessNetwork.broadcastMoveStart(world, fr, fc, tr, tc, moving, type.model().equals("horse"), animationTicks);
         state.enPassantRow = Character.toUpperCase(moving) == 'P' && Math.abs(tr - fr) == 2 ? (tr + fr) / 2 : -1;
         state.enPassantCol = state.enPassantRow < 0 ? -1 : fc;
         updateMovedFlags(state, type, fr, fc);
-        player.sendMessage(Text.literal("Ход выбран: " + (char)('a' + fc) + (8-fr) + " → " + (char)('a' + tc) + (8-tr) + "."), true);
+        if (actor != null)
+            actor.sendMessage(Text.literal("Ход выбран: " + (char)('a' + fc) + (8-fr) + " → " + (char)('a' + tc) + (8-tr) + "."), true);
     }
 
     private static void updateMovedFlags(BoardState state, ChessPieceType type, int row, int col) {
