@@ -23,7 +23,8 @@ public class ChessFigureBlock extends BlockWithEntity {
     // Figure blocks are located one block above a 2px-high board tile.
     // Renderer moves only the visual model down to the tile surface; the
     // invisible block entity itself keeps the board's logical coordinates.
-    private static final VoxelShape OUTLINE = createCuboidShape(1, -14, 1, 15, 16, 15);
+    private static final VoxelShape OUTLINE = createCuboidShape(3, -14, 3, 13, 6, 13);
+    private static final VoxelShape RAYCAST_HITBOX = createCuboidShape(1, -14, 1, 15, 16, 15);
 
     public ChessFigureBlock(Settings settings) { super(settings.nonOpaque()); }
 
@@ -53,9 +54,9 @@ public class ChessFigureBlock extends BlockWithEntity {
 
     @Override
     public VoxelShape getRaycastShape(BlockState state, BlockView world, BlockPos pos) {
-        // Ray selection uses the full visible figure height, including the model portion
-        // rendered below the logical block's Y level.
-        return OUTLINE;
+        // Use a generous ray-only volume over the whole rendered model. The visible
+        // outline remains tight, and the collision shape remains empty.
+        return RAYCAST_HITBOX;
     }
 
     @Override
