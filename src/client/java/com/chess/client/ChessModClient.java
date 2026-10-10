@@ -27,6 +27,7 @@ public class ChessModClient implements ClientModInitializer {
         BlockEntityRendererFactories.register(ModBlockEntities.CHESS_FIGURE, ChessFigureRenderer::new);
         ChessClientNetwork.registerClient();
         ChessWorldHighlights.register();
+        ChessClockHud.register();
         KeyBinding switchTeamKey = KeyBindingHelper.registerKeyBinding(
             new KeyBinding("key.chess.switch_team", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_G, "category.chess"));
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
