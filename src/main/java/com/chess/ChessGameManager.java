@@ -126,7 +126,7 @@ public final class ChessGameManager {
     public static void start(ServerWorld world) {
         BoardState state = board(world);
         if (!state.configured) throw new IllegalStateException("Сначала привяжите поле предметом Chess Board Configurator.");
-        if (state.matchEnded) resetBoard(world);
+        if (state.matchEnded || boardIsEmpty(world, state)) resetBoard(world);
         ChessWorldConfig config = ChessWorldConfig.get(world.getServer());
         state.matchMode = config.getMatchMode();
         state.ruleMode = config.getRuleMode();
@@ -221,6 +221,9 @@ public final class ChessGameManager {
             switch (action) {
                 case "get_settings":
                     ChessNetwork.sendAdminState(player, state);
+                    return;
+                case "start_match":
+                    start(world);
                     return;
                 case "settings":
                     MatchMode mode = v1 == 1 ? MatchMode.TWO_TWO : v1 == 2 ? MatchMode.ONE_VS_BOT : MatchMode.ONE_ONE;
@@ -486,6 +489,12 @@ public final class ChessGameManager {
         broadcast(world, "Режим правил: " + mode.name().toLowerCase() + ".");
         ChessNetwork.broadcastBoard(world);
         ChessNetwork.broadcastClockState(world);
+    }
+
+    private static boolean boardIsEmpty(ServerWorld world, BoardState state) {
+        for (int row = 0; row < 8; row++) for (int col = 0; col < 8; col++)
+            if (symbol(world.getBlockState(piecePos(state, row, col))) != '.') return false;
+        return true;
     }
 
     public static void resetBoard(ServerWorld world) {
