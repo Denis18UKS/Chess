@@ -434,7 +434,8 @@ public final class ChessGameManager {
         for (ServerPlayerEntity player : world.getPlayers()) {
             net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
             boolean chessTeam = team != null && (team.getName().equals("white") || team.getName().equals("black"));
-            boolean isTurnTeam = chessTeam && state.running && !state.paused
+            boolean botSide = state.matchMode == MatchMode.ONE_VS_BOT && team != null && team.getName().equals("black");
+            boolean isTurnTeam = chessTeam && !botSide && state.running && !state.paused
                 && state.whiteTurn == team.getName().equals("white");
             if (isTurnTeam) {
                 player.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, 40, 0, true, false, true));
@@ -806,6 +807,10 @@ public final class ChessGameManager {
         char piece = cells[row][col];
         ChessPieceType type = ChessPieceType.fromSymbol(piece);
         if (type == null) return;
+        if (state.matchMode == MatchMode.ONE_VS_BOT && !type.isWhite()) {
+            tell(player, "В режиме 1_vs_bot чёрными управляет компьютер.");
+            return;
+        }
         if (type.isWhite() != state.whiteTurn) {
             tell(player, "Сейчас ход " + (state.whiteTurn ? "белых" : "чёрных") + ".");
             return;
@@ -930,6 +935,9 @@ public final class ChessGameManager {
         char moving = cells[fr][fc], target = cells[tr][tc];
         ChessPieceType type = ChessPieceType.fromSymbol(moving);
         if (type == null) { tell(player, "На выбранной клетке нет фигуры."); return; }
+        if (state.matchMode == MatchMode.ONE_VS_BOT && !type.isWhite()) {
+            tell(player, "В режиме 1_vs_bot чёрными управляет компьютер."); return;
+        }
         if (target != '.' && Character.toUpperCase(target) == 'K') {
             tell(player, "Король не снимается: партия должна завершиться матом."); return;
         }
