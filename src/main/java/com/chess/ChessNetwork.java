@@ -22,6 +22,7 @@ public final class ChessNetwork {
     public static final Identifier HIGHLIGHTS = ChessMod.id("move_highlights");
     public static final Identifier DEV_SWITCH_TEAM = ChessMod.id("dev_switch_team");
     public static final Identifier PROMOTION = ChessMod.id("promotion_choice");
+    public static final Identifier CLOCK_STATE = ChessMod.id("clock_state");
 
     private ChessNetwork() {}
 
@@ -95,6 +96,26 @@ public final class ChessNetwork {
 
     public static void broadcastBoard(ServerWorld world) {
         for (ServerPlayerEntity player : PlayerLookup.world(world)) sendBoard(player);
+    }
+
+    public static void sendClockState(ServerPlayerEntity player) {
+        ChessGameManager.BoardState state = ChessGameManager.board(player.getWorld());
+        net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
+        boolean hasTeam = team != null && (team.getName().equals("white") || team.getName().equals("black"));
+        boolean white = hasTeam && team.getName().equals("white");
+        boolean enabled = hasTeam && state.running && state.ruleMode != ChessGameManager.RuleMode.NO_REALISM;
+        boolean ticking = enabled && !state.paused && !state.promotionPending && state.whiteTurn == white;
+        long remaining = white ? state.whiteClockTicks : state.blackClockTicks;
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeBoolean(enabled);
+        buf.writeBoolean(ticking);
+        buf.writeLong(remaining);
+        buf.writeLong(state.clockMaxTicks());
+        ServerPlayNetworking.send(player, CLOCK_STATE, buf);
+    }
+
+    public static void broadcastClockState(ServerWorld world) {
+        for (ServerPlayerEntity player : PlayerLookup.world(world)) sendClockState(player);
     }
 
     public static void sendHighlights(ServerPlayerEntity player, BlockPos selected, int row, int col, boolean[] legal) {
