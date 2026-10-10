@@ -23,6 +23,7 @@ public class ChessFigureBlockEntity extends BlockEntity implements GeoBlockEntit
     private long moveStartedAt;
     private int moveDurationTicks = 1;
     private boolean knightMove;
+    private int tintRgb = 0xFFFFFF;
 
     public static final RawAnimation LADYA_FORWARD = RawAnimation.begin().thenPlay("ladya_1_forward");
     public static final RawAnimation LADYA_BACK = RawAnimation.begin().thenPlay("ladya_1_back");
@@ -38,6 +39,19 @@ public class ChessFigureBlockEntity extends BlockEntity implements GeoBlockEntit
     }
 
     public float getYawDegrees() { return yawDegrees; }
+
+    public int getTintRgb() { return tintRgb; }
+    public float getTintRed() { return ((tintRgb >> 16) & 0xFF) / 255.0f; }
+    public float getTintGreen() { return ((tintRgb >> 8) & 0xFF) / 255.0f; }
+    public float getTintBlue() { return (tintRgb & 0xFF) / 255.0f; }
+
+    public void setTintRgb(int rgb) {
+        tintRgb = rgb & 0xFFFFFF;
+        markDirty();
+        if (world != null && !world.isClient) {
+            world.updateListeners(pos, getCachedState(), getCachedState(), 3);
+        }
+    }
 
     public void beginMove(BlockPos target, int durationTicks) { beginMove(target, durationTicks, false); }
 
@@ -89,6 +103,7 @@ public class ChessFigureBlockEntity extends BlockEntity implements GeoBlockEntit
     protected void writeNbt(NbtCompound nbt) {
         super.writeNbt(nbt);
         nbt.putFloat("ChessYaw", yawDegrees);
+        nbt.putInt("ChessTint", tintRgb);
         if (moveTarget != null) {
             nbt.putLong("ChessMoveTarget", moveTarget.asLong());
             nbt.putLong("ChessMoveStarted", moveStartedAt);
@@ -101,6 +116,7 @@ public class ChessFigureBlockEntity extends BlockEntity implements GeoBlockEntit
     public void readNbt(NbtCompound nbt) {
         super.readNbt(nbt);
         yawDegrees = nbt.contains("ChessYaw") ? nbt.getFloat("ChessYaw") : 0.0f;
+        tintRgb = nbt.contains("ChessTint") ? nbt.getInt("ChessTint") & 0xFFFFFF : 0xFFFFFF;
         moveTarget = nbt.contains("ChessMoveTarget") ? BlockPos.fromLong(nbt.getLong("ChessMoveTarget")) : null;
         moveStartedAt = nbt.getLong("ChessMoveStarted");
         moveDurationTicks = nbt.contains("ChessMoveDuration") ? Math.max(1, nbt.getInt("ChessMoveDuration")) : 1;
