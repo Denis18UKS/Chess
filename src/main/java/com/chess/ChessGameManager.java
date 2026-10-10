@@ -498,6 +498,7 @@ public final class ChessGameManager {
             rookEntity.beginMove(rookTo, animationTicks);
         state.pending = new PendingMove(from, to, movingState, epCapture, rookFrom, rookTo, rookState,
             type, fr, fc, tr, tc, movingYaw, rookYaw, capturedSymbol, serverTick(world.getServer()) + animationTicks, player.getUuid());
+        ChessNetwork.broadcastMoveStart(world, fr, fc, tr, tc, moving, type.model().equals("horse"), animationTicks);
         state.enPassantRow = Character.toUpperCase(moving) == 'P' && Math.abs(tr - fr) == 2 ? (tr + fr) / 2 : -1;
         state.enPassantCol = state.enPassantRow < 0 ? -1 : fc;
         updateMovedFlags(state, type, fr, fc);
