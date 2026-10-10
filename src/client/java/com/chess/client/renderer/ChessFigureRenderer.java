@@ -1,16 +1,52 @@
 package com.chess.client.renderer;
 
+import net.minecraft.client.render.VertexConsumer;
 import com.chess.ChessFigureBlockEntity;
+import com.chess.ChessPieceType;
 import com.chess.client.model.ChessLadyaModel;
+import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.util.math.RotationAxis;
+import net.minecraft.util.math.Vec3d;
+import software.bernie.geckolib.cache.object.BakedGeoModel;
 import software.bernie.geckolib.renderer.GeoBlockRenderer;
 
-public class ChessFigureRenderer
-        extends GeoBlockRenderer<ChessFigureBlockEntity> {
-
-    public ChessFigureRenderer(
-            BlockEntityRendererFactory.Context context
-    ) {
+public class ChessFigureRenderer extends GeoBlockRenderer<ChessFigureBlockEntity> {
+    public ChessFigureRenderer(BlockEntityRendererFactory.Context context) {
         super(new ChessLadyaModel());
+    }
+
+    @Override
+    public software.bernie.geckolib.core.object.Color getRenderColor(ChessFigureBlockEntity entity,
+                                                                      float partialTick, int packedLight) {
+        if (com.chess.client.ChessClientNetwork.threeDimensional
+            && entity.getPos().equals(com.chess.client.ChessWorldHighlights.selectedPosition())) {
+            // Yellow is readable on white pieces; cyan provides contrast on dark pieces.
+            ChessPieceType selectedType = ChessPieceType.fromBlock(entity.getCachedState());
+            return selectedType != null && !selectedType.isWhite()
+                ? software.bernie.geckolib.core.object.Color.ofRGBA(32, 238, 255, 255)
+                : software.bernie.geckolib.core.object.Color.ofRGBA(255, 250, 48, 255);
+        }
+        return software.bernie.geckolib.core.object.Color.ofRGBA(
+            Math.round(entity.getTintRed() * 255.0f),
+            Math.round(entity.getTintGreen() * 255.0f),
+            Math.round(entity.getTintBlue() * 255.0f), 255);
+    }
+
+    @Override
+    public void preRender(MatrixStack matrices, ChessFigureBlockEntity entity, BakedGeoModel model,
+                          VertexConsumerProvider bufferSource, VertexConsumer buffer, boolean isReRender,
+                          float tickDelta, int light, int overlay, float red, float green, float blue, float alpha) {
+        super.preRender(matrices, entity, model, bufferSource, buffer, isReRender,
+            tickDelta, light, overlay, red, green, blue, alpha);
+
+        // Interpolate along the real server-provided destination, not mirrored directional clips.
+        Vec3d offset = entity.getRenderOffset(tickDelta);
+        matrices.translate(offset.x, offset.y, offset.z);
+        // Rotate around the figure center and seat the visual model on the 2px tile.
+        matrices.translate(0.5, -0.875, 0.5);
+        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(entity.getYawDegrees()));
+        matrices.translate(-0.5, 0.0, -0.5);
     }
 }

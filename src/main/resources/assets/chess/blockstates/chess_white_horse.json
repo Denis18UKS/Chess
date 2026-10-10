@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "chess:block/chess_white_horse"
+    }
+  }
+}

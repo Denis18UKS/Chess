@@ -1,90 +1,168 @@
+import java.awt.Color
+import java.awt.Graphics2D
+import java.awt.RenderingHints
+import java.awt.image.BufferedImage
+
 plugins {
-	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
-	id 'maven-publish'
+    id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+    id 'maven-publish'
 }
 
 repositories {
-	maven {
-		name = "Geckolib"
-		url = "https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/"
-	}
-	// Дополнительные Maven-репозитории здесь не нужны.
-	// Fabric Loom сам подключает необходимые репозитории.
+    maven {
+        name = 'Geckolib'
+        url = 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/'
+    }
 }
 
 loom {
-	// Разделяем общий и клиентский исходный код.
-	splitEnvironmentSourceSets()
-
-	// ОБЯЗАТЕЛЬНО: здесь должен быть ID мода из fabric.mod.json.
-	mods {
-		"chess" {
-			sourceSet sourceSets.main
-			sourceSet sourceSets.client
-		}
-	}
+    splitEnvironmentSourceSets()
+    mods {
+        "chess" {
+            sourceSet sourceSets.main
+            sourceSet sourceSets.client
+        }
+    }
 }
 
 dependencies {
-	// Minecraft
-	minecraft "com.mojang:minecraft:${project.minecraft_version}"
-
-	// Yarn mappings
-	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-
-	// Fabric Loader
-	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-
-	// Fabric API
-	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
-
-	// Geckolib
-	modImplementation "software.bernie.geckolib:geckolib-fabric-1.20.1:${project.geckolib_version}"
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+    modImplementation "software.bernie.geckolib:geckolib-fabric-1.20.1:${project.geckolib_version}"
 }
 
 processResources {
-	def version = project.version
-
-	inputs.property "version", version
-
-	filesMatching("fabric.mod.json") {
-		expand "version": version
-	}
+    def version = project.version
+    inputs.property "version", version
+    filesMatching("fabric.mod.json") { expand "version": version }
 }
 
-// Компиляция под Java 17.
-// Minecraft 1.20.1 проект у тебя собирается именно под Java 17,
-// даже если сам Gradle запускается через установленную Java 25.
 tasks.withType(JavaCompile).configureEach {
-	it.options.release = 17
+    it.options.release = 17
 }
 
 java {
-	sourceCompatibility = JavaVersion.VERSION_17
-	targetCompatibility = JavaVersion.VERSION_17
-
-	// Генерация sources jar
-	withSourcesJar()
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+    withSourcesJar()
 }
 
 jar {
-	def projectName = project.name
-
-	inputs.property "projectName", projectName
-
-	from("LICENSE") {
-		rename { "${it}_${projectName}" }
-	}
+    def projectName = project.name
+    inputs.property "projectName", projectName
+    from("LICENSE") { rename { "${it}_${projectName}" } }
 }
 
 publishing {
-	publications {
-		create("mavenJava", MavenPublication) {
-			from components.java
-		}
-	}
+    publications {
+        create("mavenJava", MavenPublication) { from components.java }
+    }
+    repositories {}
+}
 
-	repositories {
-		// Репозитории для публикации можно добавить позже.
-	}
+def generatedChessResources = layout.buildDirectory.dir("generated/chess-assets")
+sourceSets.main.resources.srcDir(generatedChessResources)
+
+tasks.register("generateChessAssets") {
+    outputs.dir(generatedChessResources)
+    doLast {
+        File root = generatedChessResources.get().asFile
+        root.mkdirs()
+        def pieces = ["king", "ferz", "ladya", "el", "horse", "peshka"]
+        def sides = ["white", "black"]
+        def srcFigureTextures = file("src/main/resources/assets/chess/textures/figures")
+
+        sides.each { side ->
+            pieces.each { piece ->
+                boolean isWhite = side == "white"
+                Color fill = isWhite ? new Color(238, 229, 207) : new Color(42, 44, 52)
+                Color edge = isWhite ? new Color(54, 49, 42) : new Color(225, 222, 211)
+                File icon = new File(root, "assets/chess/textures/item/chess_${side}_${piece}.png")
+                icon.parentFile.mkdirs()
+                BufferedImage image = new BufferedImage(32, 32, BufferedImage.TYPE_INT_ARGB)
+                Graphics2D g = image.createGraphics()
+                g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF)
+                g.setColor(new Color(0, 0, 0, 0)); g.fillRect(0, 0, 32, 32)
+                g.setColor(fill); g.fillRect(5, 26, 22, 4); g.fillRect(8, 23, 16, 3)
+                g.setColor(edge); g.drawRect(5, 26, 21, 3); g.drawRect(8, 23, 15, 2)
+                switch (piece) {
+                    case "king":
+                        g.setColor(fill); g.fillRect(13, 8, 6, 15); g.fillRect(8, 12, 16, 5)
+                        g.setColor(edge); g.drawRect(13, 8, 5, 14); g.drawRect(8, 12, 15, 4)
+                        break
+                    case "ferz":
+                        g.setColor(fill); g.fillPolygon([7, 10, 12, 16, 20, 22, 25] as int[], [22, 12, 17, 7, 17, 12, 22] as int[], 7)
+                        g.setColor(edge); g.drawPolygon([7, 10, 12, 16, 20, 22, 25] as int[], [22, 12, 17, 7, 17, 12, 22] as int[], 7)
+                        [10,16,22].each { px -> g.fillRect(px - 1, 8, 3, 3) }
+                        break
+                    case "ladya":
+                        g.setColor(fill); g.fillRect(9, 12, 14, 11); g.fillRect(7, 8, 5, 6); g.fillRect(14, 8, 5, 6); g.fillRect(21, 8, 4, 6)
+                        g.setColor(edge); g.drawRect(9, 12, 13, 10); g.drawRect(7, 8, 4, 5); g.drawRect(14, 8, 4, 5); g.drawRect(21, 8, 3, 5)
+                        break
+                    case "el":
+                        g.setColor(fill); g.fillPolygon([16, 8, 11, 21, 24] as int[], [5, 15, 23, 23, 15] as int[], 5)
+                        g.setColor(edge); g.drawPolygon([16, 8, 11, 21, 24] as int[], [5, 15, 23, 23, 15] as int[], 5)
+                        g.drawLine(12, 15, 20, 15)
+                        break
+                    case "horse":
+                        g.setColor(fill); g.fillPolygon([8, 23, 22, 19, 20, 15, 11, 8] as int[], [23, 23, 13, 8, 5, 9, 8, 15] as int[], 8)
+                        g.setColor(edge); g.drawPolygon([8, 23, 22, 19, 20, 15, 11, 8] as int[], [23, 23, 13, 8, 5, 9, 8, 15] as int[], 8)
+                        g.fillRect(16, 11, 2, 2)
+                        break
+                    default:
+                        g.setColor(fill); g.fillRect(12, 13, 8, 10); g.fillOval(10, 6, 12, 12)
+                        g.setColor(edge); g.drawRect(12, 13, 7, 9); g.drawOval(10, 6, 11, 11)
+                }
+                g.dispose()
+                javax.imageio.ImageIO.write(image, "png", icon)
+
+                File texture = new File(root, "assets/chess/textures/generated/figures/${side}_${piece}.png")
+                texture.parentFile.mkdirs()
+                int size = piece == "ladya" ? 64 : 32
+                BufferedImage atlas = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB)
+                Graphics2D tg = atlas.createGraphics()
+                tg.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF)
+                tg.setColor(fill); tg.fillRect(0, 0, size, size)
+                Color textureLine = isWhite ? new Color(207, 196, 173) : new Color(59, 60, 66)
+                tg.setColor(textureLine)
+                for (int i = 8; i < size; i += 16) {
+                    tg.drawLine(1, i, size - 2, i)
+                }
+                // Avoid dark atlas borders bleeding into model UV faces.
+                tg.dispose()
+                javax.imageio.ImageIO.write(atlas, "png", texture)
+            }
+        }
+
+        // The board squares are only two pixels tall, so generate an exact 16x16
+        // tile atlas and use subtle wood colors rather than missing-texture purple.
+        ["white", "black"].each { side ->
+            boolean lightTile = side == "white"
+            Color wood = lightTile ? new Color(216, 198, 160) : new Color(95, 63, 46)
+            Color seam = lightTile ? new Color(204, 185, 148) : new Color(85, 55, 41)
+            BufferedImage tile = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB)
+            Graphics2D boardGraphics = tile.createGraphics()
+            boardGraphics.setColor(wood)
+            boardGraphics.fillRect(0, 0, 16, 16)
+            boardGraphics.setColor(seam)
+            boardGraphics.drawLine(1, 5, 14, 5)
+            boardGraphics.drawLine(1, 11, 14, 11)
+            boardGraphics.setColor(lightTile ? new Color(154, 124, 83) : new Color(52, 35, 28))
+            boardGraphics.drawRect(0, 0, 15, 15)
+            boardGraphics.dispose()
+            File boardTexture = new File(root, "assets/chess/textures/block/chess_${side}_square.png")
+            boardTexture.parentFile.mkdirs()
+            javax.imageio.ImageIO.write(tile, "png", boardTexture)
+        }
+    }
+}
+
+tasks.named("processResources").configure {
+    dependsOn(tasks.named("generateChessAssets"))
+}
+
+tasks.named("sourcesJar").configure {
+    dependsOn(tasks.named("generateChessAssets"))
 }
