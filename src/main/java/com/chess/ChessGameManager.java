@@ -143,6 +143,7 @@ public final class ChessGameManager {
         state.matchDeadlineAtTick = state.matchDurationMinutes > 0
             ? serverTick(world.getServer()) + state.matchDurationMinutes * 1200L : -1L;
         state.whiteClockTicks = state.blackClockTicks = state.clockMaxTicks();
+        state.participants.clear();
         for (ServerPlayerEntity player : world.getPlayers()) {
             net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
             if (team != null && (team.getName().equals("white") || team.getName().equals("black")))
@@ -282,7 +283,6 @@ public final class ChessGameManager {
         MinecraftServer server = player.getServer();
         if (server == null) return;
         ChessWorldConfig config = ChessWorldConfig.get(server);
-        boolean known = config.hasSeenPlayer(player.getUuid());
         boolean returningDuringGame = DISCONNECTED_DURING_ACTIVE_MATCH.remove(player.getUuid());
         config.rememberPlayer(player.getUuid());
 
@@ -312,26 +312,29 @@ public final class ChessGameManager {
     public static void handlePlayerDisconnect(ServerPlayerEntity player) {
         MinecraftServer server = player.getServer();
         if (server == null) return;
+        boolean someMatchActive = BOARDS.values().stream().anyMatch(state -> state.running);
+        if (someMatchActive) {
+            // Preserve this player's saved position on rejoin even if they were not in the
+            // board dimension. Only a key chess participant's disconnect can pause a game.
+            DISCONNECTED_DURING_ACTIVE_MATCH.add(player.getUuid());
+        }
         for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
             BoardState state = entry.getValue();
             ServerWorld world = server.getWorld(entry.getKey());
             if (world == null || !state.running || !world.getRegistryKey().equals(player.getWorld().getRegistryKey())) continue;
-            // Any player who disconnects during a live match is recognized on rejoin and
-            // is not sent to lobby. Only key-team disconnections trigger the pause below.
-            DISCONNECTED_DURING_ACTIVE_MATCH.add(player.getUuid());
-            if (state.paused) continue;
+            if (state.paused || !state.participants.contains(player.getUuid())) continue;
             net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
             if (team == null || !(team.getName().equals("white") || team.getName().equals("black"))) continue;
 
             boolean shouldPause = false;
             if (state.matchMode == MatchMode.ONE_ONE || state.matchMode == MatchMode.ONE_VS_BOT) {
-                // A 1v1 team has one roster member. A player disconnecting from that roster
-                // temporarily pauses the whole match until this same UUID returns.
+                // In 1v1 the disconnect of either participant pauses the game until they return.
                 shouldPause = team.getPlayerList().size() <= 1;
             } else if (state.matchMode == MatchMode.TWO_TWO) {
-                // In 2v2, pause only if every roster member of this team is now offline.
+                // In 2v2 pause only if every online roster member of this team has disconnected.
                 boolean anyTeamMateOnline = server.getPlayerManager().getPlayerList().stream()
                     .anyMatch(other -> !other.getUuid().equals(player.getUuid())
+                        && state.participants.contains(other.getUuid())
                         && team.getPlayerList().contains(other.getEntityName()));
                 shouldPause = !anyTeamMateOnline;
             }
@@ -340,7 +343,6 @@ public final class ChessGameManager {
             state.pausedByDisconnect = true;
             state.disconnectedPlayerId = player.getUuid();
             state.disconnectedTeamName = team.getName();
-            DISCONNECTED_DURING_ACTIVE_MATCH.add(player.getUuid());
             broadcast(world, "Пауза: игрок команды " + team.getName()
                 + " отключился. Игра продолжится автоматически после его возвращения.");
             updateTurnGlow(world, state);
