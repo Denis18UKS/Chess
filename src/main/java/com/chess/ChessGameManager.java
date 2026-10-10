@@ -23,6 +23,7 @@ import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraft.registry.RegistryKey;
+import net.minecraft.world.GameMode;
 
 /** Server-authoritative chess board and match controller. */
 public final class ChessGameManager {
@@ -327,7 +328,7 @@ public final class ChessGameManager {
         // Black pieces start on rows 0-1; white pieces start on rows 6-7.
         // Captures belong on the capturer's own side: white at the far (south) end, black at the near (north) end.
         state.whiteCaptureOrigin = state.origin.add(0, 0, 10);
-        state.blackCaptureOrigin = state.origin.add(0, 0, -3);
+        state.blackCaptureOrigin = state.origin.add(0, 0, -4);
         for (int row = 0; row < 2; row++) for (int col = 0; col < 8; col++) {
             BlockPos whiteTile = state.whiteCaptureOrigin.add(col, 0, row);
             BlockPos blackTile = state.blackCaptureOrigin.add(col, 0, row);
@@ -626,6 +627,13 @@ public final class ChessGameManager {
 
     private static void tick(MinecraftServer server) {
         long tick = serverTick(server);
+        // The minigame is intended for adventure mode: prevent vanilla block breaking/placing
+        // from interfering with the board. Only players currently in Survival are changed.
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            if (player.interactionManager.getGameMode() == GameMode.SURVIVAL) {
+                player.changeGameMode(GameMode.ADVENTURE);
+            }
+        }
         if (tick % 20L == 0L) syncAllTeamPieces(server);
         for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
             ServerWorld world = server.getWorld(entry.getKey());
@@ -722,7 +730,7 @@ public final class ChessGameManager {
             } else {
                 broadcast(world, "Пат. Ничья.");
                 for (ServerPlayerEntity player : world.getPlayers())
-                    player.playSound(SoundEvents.BLOCK_NOTE_BLOCK_BELL.value(), 0.9f, 0.8f);
+                    player.playSound(SoundEvents.BLOCK_NOTE_BLOCK_CHIME.value(), 0.9f, 0.75f);
             }
         } else if (inCheck) {
             broadcast(world, "Шах " + (whiteToMove ? "белому" : "чёрному") + " королю!");
