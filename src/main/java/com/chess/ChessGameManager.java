@@ -217,6 +217,7 @@ public final class ChessGameManager {
             team.setColor(nextName.equals("white") ? Formatting.WHITE : Formatting.DARK_GRAY);
         }
         scoreboard.addPlayerToTeam(player.getEntityName(), team);
+        giveTeamPieces(player, nextName.equals("white"));
         player.sendMessage(Text.literal("DEV: теперь вы за команду " + nextName + "."), false);
         ChessNetwork.sendBoard(player);
         return true;
