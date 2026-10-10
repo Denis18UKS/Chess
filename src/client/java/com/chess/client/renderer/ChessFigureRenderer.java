@@ -17,12 +17,20 @@ public class ChessFigureRenderer extends GeoBlockRenderer<ChessFigureBlockEntity
     }
 
     @Override
+    public software.bernie.geckolib.core.object.Color getRenderColor(ChessFigureBlockEntity entity,
+                                                                      float partialTick, int packedLight) {
+        return software.bernie.geckolib.core.object.Color.ofRGBA(
+            Math.round(entity.getTintRed() * 255.0f),
+            Math.round(entity.getTintGreen() * 255.0f),
+            Math.round(entity.getTintBlue() * 255.0f), 255);
+    }
+
+    @Override
     public void preRender(MatrixStack matrices, ChessFigureBlockEntity entity, BakedGeoModel model,
                           VertexConsumerProvider bufferSource, VertexConsumer buffer, boolean isReRender,
                           float tickDelta, int light, int overlay, float red, float green, float blue, float alpha) {
         super.preRender(matrices, entity, model, bufferSource, buffer, isReRender,
-            tickDelta, light, overlay, red * entity.getTintRed(), green * entity.getTintGreen(),
-            blue * entity.getTintBlue(), alpha);
+            tickDelta, light, overlay, red, green, blue, alpha);
 
         // Interpolate along the real server-provided destination, not mirrored directional clips.
         Vec3d offset = entity.getRenderOffset(tickDelta);
