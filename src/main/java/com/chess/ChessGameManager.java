@@ -225,10 +225,17 @@ public final class ChessGameManager {
                 case "settings":
                     MatchMode mode = v1 == 1 ? MatchMode.TWO_TWO : v1 == 2 ? MatchMode.ONE_VS_BOT : MatchMode.ONE_ONE;
                     RuleMode rules = v3 == 0 ? RuleMode.NO_REALISM : v3 == 2 ? RuleMode.FULL_REALISM : RuleMode.REALISM;
-                    setMatchMode(world, mode);
-                    setMatchDuration(world, v2);
-                    setRuleMode(world, rules);
-                    tell(player, "Настройки сохранены в мире и будут применены при следующем старте.");
+                    config.setMatchMode(mode);
+                    config.setMatchDurationMinutes(v2);
+                    config.setRuleMode(rules);
+                    if (!state.running) {
+                        state.matchMode = mode;
+                        state.matchDurationMinutes = Math.max(0, Math.min(1440, v2));
+                        state.ruleMode = rules;
+                    }
+                    tell(player, state.running
+                        ? "Настройки сохранены для следующей партии."
+                        : "Настройки сохранены в мире и применены.");
                     return;
                 case "set_lobby":
                     config.setLocation("lobby", world, pos);
@@ -305,7 +312,7 @@ public final class ChessGameManager {
         for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
             BoardState state = entry.getValue();
             ServerWorld world = server.getWorld(entry.getKey());
-            if (world == null || !state.running || world.getRegistryKey() != player.getWorld().getRegistryKey()) continue;
+            if (world == null || !state.running || !world.getRegistryKey().equals(player.getWorld().getRegistryKey()) || state.paused) continue;
             net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
             if (team == null || !(team.getName().equals("white") || team.getName().equals("black"))) continue;
 
