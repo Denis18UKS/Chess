@@ -123,6 +123,34 @@ public final class ChessCommands {
             )
         );
 
+        // Merge this status child into Minecraft's existing /team command tree.
+        dispatcher.register(literal("team").then(literal("status").executes(ctx -> {
+            ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
+            Team team = player.getScoreboardTeam();
+            if (team == null) {
+                ctx.getSource().sendFeedback(() -> Text.literal("Ты не состоишь ни в одной scoreboard-команде."), false);
+                return 1;
+            }
+            String members = team.getPlayerList().stream().sorted()
+                .collect(java.util.stream.Collectors.joining(", "));
+            String teamName = team.getName();
+            ctx.getSource().sendFeedback(() -> Text.literal("Твоя команда: " + teamName + ". Участники: " + members), false);
+            return 1;
+        })));
+
+        dispatcher.register(literal("teamstatus").executes(ctx -> {
+            ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
+            Team team = player.getScoreboardTeam();
+            if (team == null) {
+                ctx.getSource().sendFeedback(() -> Text.literal("Ты не состоишь ни в одной scoreboard-команде."), false);
+            } else {
+                String members = team.getPlayerList().stream().sorted()
+                    .collect(java.util.stream.Collectors.joining(", "));
+                ctx.getSource().sendFeedback(() -> Text.literal("Твоя команда: " + team.getName() + ". Участники: " + members), false);
+            }
+            return 1;
+        }));
+
         dispatcher.register(literal("chessdev").executes(ctx -> {
             ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
             if (player.getCommandTags().contains("chess_dev")) {
