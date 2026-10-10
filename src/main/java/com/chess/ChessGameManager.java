@@ -123,6 +123,79 @@ public final class ChessGameManager {
         broadcast(world, "Режим правил: " + mode.name().toLowerCase() + ".");
     }
 
+    public static void resetBoard(ServerWorld world) {
+        BoardState state = board(world);
+        if (!state.configured) throw new IllegalStateException("Сначала привяжите доску командой /chess board set <x y z> или конфигуратором.");
+        state.pending = null;
+        state.promotionPending = false;
+        state.promotionPlayerId = null;
+        state.promotionRow = state.promotionCol = -1;
+        state.whiteTurn = true;
+        state.paused = false;
+        state.running = true;
+        state.whiteKingMoved = state.blackKingMoved = false;
+        state.whiteLeftRookMoved = state.whiteRightRookMoved = false;
+        state.blackLeftRookMoved = state.blackRightRookMoved = false;
+        state.enPassantRow = state.enPassantCol = -1;
+        state.whiteCapturedPieces.clear();
+        state.blackCapturedPieces.clear();
+        state.selected3DPieces.clear();
+
+        String blackBack = "rnbqkbnr";
+        String whiteBack = "RNBQKBNR";
+        for (int row = 0; row < 8; row++) {
+            for (int col = 0; col < 8; col++) {
+                char symbol = '.';
+                if (row == 0) symbol = blackBack.charAt(col);
+                else if (row == 1) symbol = 'p';
+                else if (row == 6) symbol = 'P';
+                else if (row == 7) symbol = whiteBack.charAt(col);
+                BlockPos pos = piecePos(state, row, col);
+                if (symbol == '.') {
+                    world.setBlockState(pos, Blocks.AIR.getDefaultState(), 3);
+                } else {
+                    ChessPieceType type = ChessPieceType.fromSymbol(symbol);
+                    world.setBlockState(pos, type.block().getDefaultState(), 3);
+                    if (world.getBlockEntity(pos) instanceof ChessFigureBlockEntity figure) {
+                        figure.setYawDegrees(0.0f);
+                        figure.setTintRgb(0xFFFFFF);
+                    }
+                }
+            }
+        }
+
+        if (state.whiteCaptureOrigin != null) clearCaptureTray(world, state.whiteCaptureOrigin);
+        if (state.blackCaptureOrigin != null) clearCaptureTray(world, state.blackCaptureOrigin);
+        autoConfigureCaptures(world, state);
+        updateTeamHighlights(world.getServer(), state);
+        ChessNetwork.broadcastBoard(world);
+        broadcast(world, "Доска сброшена. Фигуры расставлены в начальную позицию, первый ход — белые.");
+    }
+
+    private static void clearCaptureTray(ServerWorld world, BlockPos tray) {
+        for (int row = 0; row < 2; row++) for (int col = 0; col < 8; col++) {
+            BlockPos piece = tray.add(col, 1, row);
+            if (ChessPieceType.fromBlock(world.getBlockState(piece)) != null)
+                world.setBlockState(piece, Blocks.AIR.getDefaultState(), 3);
+        }
+    }
+
+    public static void giveTeamPieces(ServerPlayerEntity player, boolean white) {
+        String issuedTag = white ? "chess_pieces_white_given" : "chess_pieces_black_given";
+        if (player.getCommandTags().contains(issuedTag)) return;
+        player.addCommandTag(issuedTag);
+        for (ChessPieceType type : ChessPieceType.values()) {
+            if (type.isWhite() != white) continue;
+            int amount = Character.toUpperCase(type.symbol()) == 'P' ? 8
+                : ("RNB".indexOf(Character.toUpperCase(type.symbol())) >= 0 ? 2 : 1);
+            net.minecraft.item.Item item = type.block().asItem();
+            if (item == net.minecraft.item.Items.AIR) continue;
+            net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(item, amount);
+            if (!player.getInventory().insertStack(stack)) player.dropItem(stack, false);
+        }
+        player.sendMessage(Text.literal("Тебе выдан комплект шахматных фигур: " + (white ? "белые" : "чёрные") + "."), false);
+    }
+
     public static void setViewMode(ServerWorld world, boolean threeDimensional) {
         BoardState state = board(world);
         state.threeDimensional = threeDimensional;
@@ -480,15 +553,17 @@ public final class ChessGameManager {
             state.selected3DPieces.clear();
             world.playSound(null, move.to, SoundEvents.BLOCK_WOOD_PLACE, SoundCategory.PLAYERS, 0.65f, 1.0f);
 
-            if (needsPromotion) {
+            if (needsPromotion && !promotionOptions(state, move.type.isWhite()).isEmpty()) {
                 state.promotionPending = true;
                 state.promotionWhite = move.type.isWhite();
                 state.promotionRow = move.tr;
                 state.promotionCol = move.tc;
                 state.promotionPlayerId = move.playerId;
                 for (ServerPlayerEntity player : world.getPlayers()) ChessNetwork.sendBoard(player);
-                broadcast(world, "Пешка дошла до края доски. Выберите фигуру для превращения.");
+                broadcast(world, "Пешка дошла до края доски. Выбери одну из реально срубленных фигур.");
             } else {
+                if (needsPromotion) tellPlayerByUuid(world, move.playerId,
+                    "Нет доступной срубленной фигуры для превращения: пешка остаётся пешкой.");
                 if (state.ruleMode != RuleMode.NO_REALISM || state.threeDimensional) state.whiteTurn = !state.whiteTurn;
                 updateTeamHighlights(server, state);
                 announceTurn(world, state);
@@ -523,6 +598,15 @@ public final class ChessGameManager {
         } else if (inCheck) {
             broadcast(world, "Шах " + (whiteToMove ? "белому" : "чёрному") + " королю!");
             notifyCheckTeam(world, whiteToMove, "ШАХ", SoundEvents.BLOCK_NOTE_BLOCK_BELL.value());
+        }
+    }
+
+    private static void tellPlayerByUuid(ServerWorld world, UUID uuid, String message) {
+        for (ServerPlayerEntity player : world.getPlayers()) {
+            if (player.getUuid().equals(uuid)) {
+                tell(player, message);
+                return;
+            }
         }
     }
 
