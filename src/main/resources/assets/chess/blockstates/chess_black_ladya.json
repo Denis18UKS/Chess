@@ -1,5 +1,7 @@
 {
   "variants": {
-    "": {}
+    "": {
+      "model": "chess:block/chess_black_ladya"
+    }
   }
 }
