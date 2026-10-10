@@ -92,6 +92,31 @@ public final class ChessCommands {
             .then(literal("two_two").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
                 ChessGameManager.setMatchMode(ctx.getSource().getWorld(), ChessGameManager.MatchMode.TWO_TWO); return 1;
             }))
+            .then(literal("1_vs_bot").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
+                var world = ctx.getSource().getWorld();
+                try {
+                    ChessGameManager.setMatchMode(world, ChessGameManager.MatchMode.ONE_VS_BOT);
+                    ChessGameManager.resetBoard(world);
+                    ChessGameManager.start(world);
+                    ctx.getSource().sendFeedback(() -> Text.literal("Chess: начата партия 1_vs_bot."), false);
+                    return 1;
+                } catch (IllegalStateException ex) {
+                    ctx.getSource().sendError(Text.literal(ex.getMessage()));
+                    return 0;
+                }
+            }))
+            .then(literal("match_time").then(argument("minutes", IntegerArgumentType.integer(0, 1440))
+                .requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
+                    int minutes = IntegerArgumentType.getInteger(ctx, "minutes");
+                    ChessGameManager.setMatchDuration(ctx.getSource().getWorld(), minutes);
+                    return 1;
+                })))
+            .then(literal("lobby_delay").then(argument("seconds", IntegerArgumentType.integer(0, 3600))
+                .requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
+                    int seconds = IntegerArgumentType.getInteger(ctx, "seconds");
+                    ChessGameManager.setLobbyDelay(ctx.getSource().getServer(), seconds);
+                    return 1;
+                })) )
             .then(literal("white").executes(ctx -> joinTeam(ctx.getSource(), "white")))
             .then(literal("black").executes(ctx -> joinTeam(ctx.getSource(), "black")))
             .then(literal("autoconfig").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
@@ -171,11 +196,8 @@ public final class ChessCommands {
     }
 
     private static int teleport(ServerCommandSource source, boolean white) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
-        ServerPlayerEntity player = source.getPlayerOrThrow();
-        BlockPos pos = ChessGameManager.teleportTarget(source.getWorld(), white);
-        if (pos == null) { source.sendError(Text.literal("TP-точка не настроена.")); return 0; }
-        player.teleport(source.getWorld(), pos.getX() + .5, pos.getY() + 1.0, pos.getZ() + .5, player.getYaw(), player.getPitch());
-        return 1;
+        source.getPlayerOrThrow();
+        return ChessGameManager.teleportTeamToConfiguredTarget(source.getWorld(), white) ? 1 : 0;
     }
 
     private static int joinTeam(ServerCommandSource source, String name) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
@@ -183,7 +205,11 @@ public final class ChessCommands {
         ChessGameManager.BoardState state = ChessGameManager.board(source.getWorld());
         Scoreboard scoreboard = source.getServer().getScoreboard();
         Team team = ensureTeam(scoreboard, name, name.equals("white") ? Formatting.WHITE : Formatting.DARK_GRAY);
-        int limit = state.matchMode == ChessGameManager.MatchMode.ONE_ONE ? 1 : 2;
+        if (state.matchMode == ChessGameManager.MatchMode.ONE_VS_BOT && name.equals("black")) {
+            source.sendError(Text.literal("В режиме 1_vs_bot команда black занята компьютерным соперником. Присоединяйся к white."));
+            return 0;
+        }
+        int limit = state.matchMode == ChessGameManager.MatchMode.TWO_TWO ? 2 : 1;
         boolean alreadyMember = team.getPlayerList().contains(player.getEntityName());
         if (!alreadyMember && team.getPlayerList().size() >= limit) {
             source.sendError(Text.literal("Команда " + name + " заполнена для режима " + (limit == 1 ? "1v1" : "2v2") + "."));
