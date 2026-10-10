@@ -341,7 +341,7 @@ public final class ChessGameManager {
         char piece = cells[row][col];
         ChessPieceType type = ChessPieceType.fromSymbol(piece);
         if (type == null) return;
-        if (state.ruleMode != RuleMode.NO_REALISM && type.isWhite() != state.whiteTurn) {
+        if ((state.ruleMode != RuleMode.NO_REALISM || state.threeDimensional) && type.isWhite() != state.whiteTurn) {
             tell(player, "Сейчас ход " + (state.whiteTurn ? "белых" : "чёрных") + ".");
             return;
         }
@@ -462,7 +462,7 @@ public final class ChessGameManager {
             if (state.ruleMode != RuleMode.NO_REALISM && playerWhite != state.whiteTurn) {
                 tell(player, "Сейчас ход " + (state.whiteTurn ? "белых" : "чёрных") + "."); return;
             }
-        } else if (state.ruleMode != RuleMode.NO_REALISM && type.isWhite() != state.whiteTurn) {
+        } else if ((state.ruleMode != RuleMode.NO_REALISM || state.threeDimensional) && type.isWhite() != state.whiteTurn) {
             tell(player, "Сейчас ход " + (state.whiteTurn ? "белых" : "чёрных") + "."); return;
         }
 
