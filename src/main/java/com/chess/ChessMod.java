@@ -19,6 +19,7 @@ public class ChessMod implements ModInitializer {
         ChessNetwork.registerServer();
         ChessCommands.register();
         ChessGameManager.registerTicker();
+        ChessInteractionHooks.register();
         LOGGER.info("Chess initialized: 12 piece blocks, game state, commands and networking registered.");
     }
 
