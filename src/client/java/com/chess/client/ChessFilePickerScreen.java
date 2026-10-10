@@ -44,6 +44,7 @@ public final class ChessFilePickerScreen extends Screen {
 
     @Override
     protected void init() {
+        refreshEntries();
         int widthField = Math.max(140, width - 152);
         pathField = new TextFieldWidget(textRenderer, 12, 33, widthField, 20, Text.literal("Путь"));
         pathField.setMaxLength(512);
@@ -85,7 +86,6 @@ public final class ChessFilePickerScreen extends Screen {
         }).dimensions(width / 2 + 5, navY, 95, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Отмена"), b -> close())
             .dimensions(width / 2 - 50, height - 32, 100, 20).build());
-        refreshEntries();
     }
 
     private void refreshEntries() {
