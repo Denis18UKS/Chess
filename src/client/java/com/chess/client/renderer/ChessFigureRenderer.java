@@ -19,6 +19,11 @@ public class ChessFigureRenderer extends GeoBlockRenderer<ChessFigureBlockEntity
     @Override
     public software.bernie.geckolib.core.object.Color getRenderColor(ChessFigureBlockEntity entity,
                                                                       float partialTick, int packedLight) {
+        if (com.chess.client.ChessClientNetwork.threeDimensional
+            && entity.getPos().equals(com.chess.client.ChessWorldHighlights.selectedPosition())) {
+            // Highlight the actual model silhouette instead of drawing an oversized wireframe cube around it.
+            return software.bernie.geckolib.core.object.Color.ofRGBA(255, 250, 48, 255);
+        }
         return software.bernie.geckolib.core.object.Color.ofRGBA(
             Math.round(entity.getTintRed() * 255.0f),
             Math.round(entity.getTintGreen() * 255.0f),
