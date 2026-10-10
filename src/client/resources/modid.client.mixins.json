@@ -4,7 +4,8 @@
   "compatibilityLevel": "JAVA_17",
   "client": [
     "ChessClientMixin",
-    "HideSurvivalHudMixin"
+    "HideSurvivalHudMixin",
+    "HideFoodIconsMixin"
   ],
   "injectors": {
     "defaultRequire": 1
