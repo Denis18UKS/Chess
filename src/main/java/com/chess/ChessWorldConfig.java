@@ -226,7 +226,7 @@ public final class ChessWorldConfig extends PersistentState {
         public boolean contains(ServerWorld world, ServerPlayerEntity player) {
             if (!dimension.equals(world.getRegistryKey().getValue().toString())) return false;
             double minX = Math.min(a.getX(), b.getX()), maxX = Math.max(a.getX(), b.getX()) + 1.0;
-            double minY = Math.min(a.getY(), b.getY()), maxY = Math.max(a.getY(), b.getY()) + 1.0;
+            double minY = Math.min(a.getY(), b.getY()), maxY = Math.max(a.getY(), b.getY()) + 2.0;
             double minZ = Math.min(a.getZ(), b.getZ()), maxZ = Math.max(a.getZ(), b.getZ()) + 1.0;
             return player.getX() >= minX && player.getX() < maxX
                 && player.getY() >= minY && player.getY() < maxY
