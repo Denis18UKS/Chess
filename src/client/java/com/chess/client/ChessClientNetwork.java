@@ -59,6 +59,14 @@ public final class ChessClientNetwork {
             });
         });
 
+        ClientPlayNetworking.registerGlobalReceiver(ChessNetwork.CLOCK_STATE, (client, handler, buf, responseSender) -> {
+            boolean visible = buf.readBoolean();
+            boolean ticking = buf.readBoolean();
+            long remaining = buf.readLong();
+            long maximum = buf.readLong();
+            client.execute(() -> ChessClockHud.update(visible, ticking, remaining, maximum));
+        });
+
         ClientPlayNetworking.registerGlobalReceiver(ChessNetwork.BOARD_MOVE_ANIMATION, (client, handler, buf, responseSender) -> {
             int fromRow = buf.readInt();
             int fromCol = buf.readInt();
