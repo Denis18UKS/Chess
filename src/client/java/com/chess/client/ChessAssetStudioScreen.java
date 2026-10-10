@@ -6,16 +6,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import javax.imageio.ImageIO;
-import javax.swing.JFileChooser;
-import javax.swing.filechooser.FileNameExtensionFilter;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
 
-/** Imports model geo JSON and texture PNGs from a local file picker in-game. */
+/** In-game editor for importing piece PNG textures and GeckoLib geo models. */
 public class ChessAssetStudioScreen extends Screen {
     private static final String[] PIECES = {"king", "ferz", "ladya", "el", "horse", "peshka"};
     private final Screen parent;
@@ -55,13 +55,20 @@ public class ChessAssetStudioScreen extends Screen {
                 white = !white;
                 clearAndInit();
             }).dimensions(mid - 75, 112, 150, 20).build());
-            addDrawableChild(ButtonWidget.builder(Text.literal("Выбрать PNG и применить в игре"), b -> importTexture())
-                .dimensions(mid - 125, 147, 250, 24).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal("Выбрать PNG и применить в игре"), b -> {
+                MinecraftClient.getInstance().setScreen(new ChessFilePickerScreen(this,
+                    "Выбери PNG текстуру для " + russian(PIECES[pieceIndex]), new String[]{"png"}, this::importTexture));
+            }).dimensions(mid - 125, 147, 250, 24).build());
         } else {
-            addDrawableChild(ButtonWidget.builder(Text.literal("Загрузить GEO JSON модели"), b -> importModel())
-                .dimensions(mid - 125, 147, 250, 24).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal("Загрузить GEO JSON модели"), b -> {
+                MinecraftClient.getInstance().setScreen(new ChessFilePickerScreen(this,
+                    "Выбери GeckoLib GEO JSON модели", new String[]{"json"}, this::importModel));
+            }).dimensions(mid - 125, 147, 250, 24).build());
         }
 
+        addDrawableChild(ButtonWidget.builder(Text.literal("Как красить фигуры в мире"), b -> {
+            status = "Возьми краситель и ПКМ по фигуре, чтобы перекрасить её.";
+        }).dimensions(mid - 125, 180, 250, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Готово"), b -> close())
             .dimensions(mid - 50, height - 34, 100, 20).build());
     }
@@ -72,26 +79,21 @@ public class ChessAssetStudioScreen extends Screen {
         context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 12, 0xFFFFFFFF);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal(modelsTab ? "ВКЛАДКА: МОДЕЛИ" : "ВКЛАДКА: ТЕКСТУРЫ"), width / 2, 26, 0xFFDDC28A);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("Фигура: " + russian(PIECES[pieceIndex])), width / 2, 69, 0xFFFFFFFF);
-
         if (modelsTab) {
             context.drawCenteredTextWithShadow(textRenderer, Text.literal("Заменяет 3D-геометрию фигуры для обеих сторон."), width / 2, 132, 0xFFCCCCCC);
         } else {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Сторона: " + (white ? "белые" : "чёрные")), width / 2, 136, 0xFFCCCCCC);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Текстура применяется только к выбранной стороне."), width / 2, 136, 0xFFCCCCCC);
         }
         context.drawCenteredTextWithShadow(textRenderer, Text.literal(status), width / 2, height - 58, 0xFFFFE3A3);
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Файлы сохраняются в resourcepacks/ChessCustom и включаются автоматически."), width / 2, height - 47, 0xFFAAAAAA);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Выбор файлов работает внутри Minecraft, без системного окна Swing."), width / 2, height - 47, 0xFFAAAAAA);
         super.render(context, mouseX, mouseY, delta);
     }
 
-    private void importTexture() {
-        JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("Выбери PNG текстуру для " + russian(PIECES[pieceIndex]));
-        chooser.setFileFilter(new FileNameExtensionFilter("PNG texture (*.png)", "png"));
-        if (chooser.showOpenDialog(null) != JFileChooser.APPROVE_OPTION) return;
-        Path source = chooser.getSelectedFile().toPath();
+    private void importTexture(Path source) {
         try {
             BufferedImage image = ImageIO.read(source.toFile());
-            if (image == null || image.getWidth() < 1 || image.getHeight() < 1 || image.getWidth() > 4096 || image.getHeight() > 4096) {
+            if (image == null || image.getWidth() < 1 || image.getHeight() < 1
+                || image.getWidth() > 4096 || image.getHeight() > 4096) {
                 status = "Ошибка: нужен корректный PNG не больше 4096×4096.";
                 return;
             }
@@ -107,15 +109,13 @@ public class ChessAssetStudioScreen extends Screen {
         }
     }
 
-    private void importModel() {
-        JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("Выбери GEO JSON модель " + russian(PIECES[pieceIndex]));
-        chooser.setFileFilter(new FileNameExtensionFilter("Minecraft / GeckoLib geo JSON (*.json)", "json"));
-        if (chooser.showOpenDialog(null) != JFileChooser.APPROVE_OPTION) return;
-        Path source = chooser.getSelectedFile().toPath();
+    private void importModel(Path source) {
         try {
             String json = Files.readString(source);
-            if (!json.contains("minecraft:geometry") || !json.contains("\"bones\"")) {
+            JsonElement parsed = JsonParser.parseString(json);
+            if (!parsed.isJsonObject()
+                || !json.contains("minecraft:geometry")
+                || !json.contains("\"bones\"")) {
                 status = "Ошибка: нужен GEO JSON с minecraft:geometry и bones.";
                 return;
             }
