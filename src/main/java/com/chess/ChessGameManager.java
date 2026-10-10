@@ -221,10 +221,18 @@ public final class ChessGameManager {
         BoardState state = board(player.getWorld());
         net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
         boolean hasChessTeam = team != null && (team.getName().equals("white") || team.getName().equals("black"));
-        boolean white = hasChessTeam && team.getName().equals("white");
-        boolean shouldHaveKit = hasChessTeam && state.running && !state.threeDimensional;
         net.minecraft.entity.player.PlayerInventory inventory = player.getInventory();
 
+        // Players outside the chess teams keep their own inventory completely untouched.
+        // This method is called during regular synchronization, so do not repeatedly clear
+        // figure items from spectators/unassigned players.
+        if (!hasChessTeam) {
+            KIT_SLOT_WARNED.remove(player.getUuid());
+            return;
+        }
+
+        boolean white = team.getName().equals("white");
+        boolean shouldHaveKit = state.running && !state.threeDimensional;
         if (!shouldHaveKit) {
             clearFigureItems(inventory);
             KIT_SLOT_WARNED.remove(player.getUuid());
