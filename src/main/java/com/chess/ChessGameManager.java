@@ -41,7 +41,7 @@ public final class ChessGameManager {
     private static final Map<RegistryKey<World>, BoardState> BOARDS = new HashMap<>();
     private static final Set<UUID> KIT_SLOT_WARNED = new HashSet<>();
     private static final Set<UUID> CHESS_GLOWING = new HashSet<>();
-    private static final Set<String> ACTIVE_ZONE_VISITS = new HashSet<>();
+    private static final Map<String, ChessWorldConfig.TriggerZone> ACTIVE_ZONE_VISITS = new HashMap<>();
 
     private ChessGameManager() {}
 
@@ -204,6 +204,107 @@ public final class ChessGameManager {
         broadcast(world, "Шахматный таймер установлен: " + state.clockMinutes + " мин. на каждую команду. Шкала опыта показывает оставшееся время.");
         ChessNetwork.broadcastClockState(world);
         ChessNetwork.broadcastBoard(world);
+    }
+
+    public static void handleAdminAction(ServerPlayerEntity player, String action, BlockPos pos,
+                                         String a, String b, String c, int v1, int v2, int v3) {
+        if (!"get_settings".equals(action) && !player.hasPermissionLevel(2)) {
+            tell(player, "Для настройки панели требуется право оператора.");
+            return;
+        }
+        ServerWorld world = player.getServerWorld();
+        ChessWorldConfig config = ChessWorldConfig.get(player.getServer());
+        BoardState state = board(world);
+        try {
+            switch (action) {
+                case "get_settings":
+                    ChessNetwork.sendAdminState(player, state);
+                    return;
+                case "settings":
+                    MatchMode mode = v1 == 1 ? MatchMode.TWO_TWO : v1 == 2 ? MatchMode.ONE_VS_BOT : MatchMode.ONE_ONE;
+                    RuleMode rules = v3 == 0 ? RuleMode.NO_REALISM : v3 == 2 ? RuleMode.FULL_REALISM : RuleMode.REALISM;
+                    setMatchMode(world, mode);
+                    setMatchDuration(world, v2);
+                    setRuleMode(world, rules);
+                    tell(player, "Настройки сохранены в мире и будут применены при следующем старте.");
+                    return;
+                case "set_lobby":
+                    config.setLocation("lobby", world, pos);
+                    tell(player, "Точка лобби сохранена в мире: " + pos.toShortString());
+                    return;
+                case "set_tp_white":
+                    setTeleport(world, true, pos);
+                    return;
+                case "set_tp_black":
+                    setTeleport(world, false, pos);
+                    return;
+                case "bind_command":
+                    config.bindBlock(world, pos, a);
+                    tell(player, a == null || a.isBlank()
+                        ? "Привязка команды к блоку снята."
+                        : "Команда привязана к блоку " + pos.toShortString() + ".");
+                    return;
+                case "zone_corner_a":
+                    config.saveZoneCorner(world, pos);
+                    tell(player, "Угол A зоны сохранён. Используй конфигуратор на блоке второго угла и нажми «Создать зону B».");
+                    return;
+                case "zone_define":
+                    config.defineZone(a, world, pos, b, c);
+                    tell(player, "Триггер-зона сохранена в данных мира.");
+                    return;
+                default:
+                    tell(player, "Неизвестное действие конфигуратора: " + action);
+            }
+        } catch (IllegalStateException exception) {
+            tell(player, exception.getMessage());
+        }
+    }
+
+    public static void setLobbyDelay(MinecraftServer server, int seconds) {
+        int value = Math.max(0, Math.min(3600, seconds));
+        ChessWorldConfig.get(server).setLobbyDelaySeconds(value);
+        server.getPlayerManager().broadcast(Text.literal("Задержка возврата в лобби установлена: " + value + " сек."), false);
+    }
+
+    private static void runConfiguredCommand(MinecraftServer server, ServerWorld world,
+                                             ServerPlayerEntity player, BlockPos pos, String command) {
+        if (command == null || command.isBlank()) return;
+        try {
+            var source = player.getCommandSource().withLevel(4).withWorld(world).withPosition(
+                pos == null ? player.getPos() : net.minecraft.util.math.Vec3d.ofCenter(pos));
+            server.getCommandManager().executeWithPrefix(source, ChessWorldConfig.cleanCommand(command));
+        } catch (RuntimeException exception) {
+            player.sendMessage(Text.literal("Команда триггера не выполнена: " + exception.getMessage()), false);
+        }
+    }
+
+    private static void processTriggerZones(MinecraftServer server) {
+        ChessWorldConfig config = ChessWorldConfig.get(server);
+        Set<String> nowInside = new HashSet<>();
+        for (ServerWorld world : server.getWorlds()) {
+            for (ServerPlayerEntity player : world.getPlayers()) {
+                for (ChessWorldConfig.TriggerZone zone : config.getZones()) {
+                    if (!zone.contains(world, player)) continue;
+                    String key = player.getUuid() + "|" + zone.name;
+                    nowInside.add(key);
+                    if (!ACTIVE_ZONE_VISITS.containsKey(key)) {
+                        ACTIVE_ZONE_VISITS.put(key, zone);
+                        runConfiguredCommand(server, world, player, zone.a, zone.enterCommand);
+                    }
+                }
+            }
+        }
+        for (String key : new HashSet<>(ACTIVE_ZONE_VISITS.keySet())) {
+            if (nowInside.contains(key)) continue;
+            ChessWorldConfig.TriggerZone zone = ACTIVE_ZONE_VISITS.remove(key);
+            int split = key.indexOf('|');
+            if (split <= 0) continue;
+            UUID uuid;
+            try { uuid = UUID.fromString(key.substring(0, split)); }
+            catch (IllegalArgumentException exception) { continue; }
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
+            if (player != null) runConfiguredCommand(server, player.getServerWorld(), player, zone.b, zone.leaveCommand);
+        }
     }
 
     public static void setRuleMode(ServerWorld world, RuleMode mode) {
@@ -584,12 +685,6 @@ public final class ChessGameManager {
             "Общий лимит времени партии: " + state.matchDurationMinutes + " мин.");
     }
 
-    public static void setLobbyDelay(MinecraftServer server, int seconds) {
-        int clamped = Math.max(0, Math.min(3600, seconds));
-        ChessWorldConfig.get(server).setLobbyDelaySeconds(clamped);
-        server.getPlayerManager().broadcast(Text.literal("Задержка возврата в лобби: " + clamped + " сек."), false);
-    }
-
     public static boolean transferTurn(ServerWorld world) {
         BoardState state = board(world);
         if (!state.running || state.paused || state.pending != null) return false;
@@ -905,6 +1000,15 @@ public final class ChessGameManager {
         public boolean configured;
         public boolean running;
         public boolean paused;
+        public boolean pausedByDisconnect;
+        public UUID disconnectedPlayerId;
+        public String disconnectedTeamName = "";
+        public boolean matchEnded;
+        public long returnToLobbyAtTick = -1L;
+        public long matchDeadlineAtTick = -1L;
+        public long botMoveAtTick = -1L;
+        public int matchDurationMinutes;
+        public final Set<UUID> participants = new HashSet<>();
         public boolean whiteTurn = true;
         public RuleMode ruleMode = RuleMode.REALISM;
         public MatchMode matchMode = MatchMode.ONE_ONE;
