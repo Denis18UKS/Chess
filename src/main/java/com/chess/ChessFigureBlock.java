@@ -23,7 +23,7 @@ public class ChessFigureBlock extends BlockWithEntity {
     // Figure blocks are located one block above a 2px-high board tile.
     // Renderer moves only the visual model down to the tile surface; the
     // invisible block entity itself keeps the board's logical coordinates.
-    private static final VoxelShape OUTLINE = createCuboidShape(4, -14, 4, 12, 0, 12);
+    private static final VoxelShape OUTLINE = createCuboidShape(3, -14, 3, 13, 2, 13);
 
     public ChessFigureBlock(Settings settings) { super(settings.nonOpaque()); }
 
@@ -53,8 +53,8 @@ public class ChessFigureBlock extends BlockWithEntity {
 
     @Override
     public VoxelShape getCollisionShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
-        // Share the model-sized interaction outline with movement collision so
-        // pieces are solid/targetable without the old oversized invisible cube.
+        // The board piece has a narrow real hitbox from the board surface to the model top,
+        // without a tall invisible cage above it.
         return OUTLINE;
     }
 
