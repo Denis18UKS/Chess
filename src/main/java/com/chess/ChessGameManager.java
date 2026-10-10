@@ -409,7 +409,7 @@ public final class ChessGameManager {
         char piece = cells[row][col];
         ChessPieceType type = ChessPieceType.fromSymbol(piece);
         if (type == null) return;
-        if ((state.ruleMode != RuleMode.NO_REALISM || state.threeDimensional) && type.isWhite() != state.whiteTurn) {
+        if (type.isWhite() != state.whiteTurn) {
             tell(player, "Сейчас ход " + (state.whiteTurn ? "белых" : "чёрных") + ".");
             return;
         }
@@ -527,11 +527,19 @@ public final class ChessGameManager {
         if (team != null && (team.getName().equals("white") || team.getName().equals("black"))) {
             boolean playerWhite = team.getName().equals("white");
             if (playerWhite != type.isWhite()) { tell(player, "Выберите фигуру своей команды."); return; }
-            if (state.ruleMode != RuleMode.NO_REALISM && playerWhite != state.whiteTurn) {
-                tell(player, "Сейчас ход " + (state.whiteTurn ? "белых" : "чёрных") + "."); return;
+        }
+        // A free-selection mode still alternates turns; only piece movement restrictions are relaxed.
+        if (type.isWhite() != state.whiteTurn) {
+            tell(player, "Сейчас ход " + (state.whiteTurn ? "белых" : "чёрных") + ".");
+            return;
+        }
+        if (state.ruleMode == RuleMode.FULL_REALISM && !state.threeDimensional) {
+            net.minecraft.item.Item held = player.getMainHandStack().getItem();
+            net.minecraft.item.Item offhand = player.getOffHandStack().getItem();
+            if (held != type.block().asItem() && offhand != type.block().asItem()) {
+                tell(player, "Полный реализм: держи предмет именно этой фигуры, чтобы сделать ей ход.");
+                return;
             }
-        } else if ((state.ruleMode != RuleMode.NO_REALISM || state.threeDimensional) && type.isWhite() != state.whiteTurn) {
-            tell(player, "Сейчас ход " + (state.whiteTurn ? "белых" : "чёрных") + "."); return;
         }
 
         boolean enforceMovement = state.ruleMode != RuleMode.NO_REALISM || state.threeDimensional;
