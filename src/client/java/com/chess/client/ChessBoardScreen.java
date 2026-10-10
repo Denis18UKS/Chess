@@ -274,6 +274,12 @@ public class ChessBoardScreen extends Screen {
             double distance = dx * dx + dz * dz;
             if (distance < nearest) { nearest = distance; fromRow = row; fromCol = col; }
         }
+        // A board snapshot can arrive a little later than the screen itself. Let the
+        // next snapshot retry instead of permanently marking an empty board as selected.
+        if (nearest == Double.MAX_VALUE) {
+            fromRow = fromCol = toRow = toCol = -1;
+            selectionInitialized = false;
+        }
     }
 
     private String ruleLabel(String mode) {
