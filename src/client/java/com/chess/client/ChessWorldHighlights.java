@@ -64,11 +64,10 @@ public final class ChessWorldHighlights {
         MatrixStack matrices = context.matrixStack();
         VertexConsumerProvider consumers = context.consumers();
         Matrix4f matrix = matrices.peek().getPositionMatrix();
-        VertexConsumer fill = consumers.getBuffer(RenderLayer.getDebugFilledBox());
+        VertexConsumer fill = consumers.getBuffer(RenderLayer.getDebugQuads());
 
         // A single flat quad per cell has no side faces or triangulated gradients.
         if (selected != null) {
-            char moving = cells.charAt(selectedRow * 8 + selectedCol);
             for (int row = 0; row < 8; row++) for (int col = 0; col < 8; col++) {
                 boolean canMove = legal[row * 8 + col];
                 int red = canMove ? 68 : 240;
@@ -79,7 +78,7 @@ public final class ChessWorldHighlights {
                 double x2 = boardOrigin.getX() + col + 0.965 - camera.x;
                 double z1 = boardOrigin.getZ() + row + 0.035 - camera.z;
                 double z2 = boardOrigin.getZ() + row + 0.965 - camera.z;
-                double y = boardOrigin.getY() + 0.132 - camera.y;
+                double y = boardOrigin.getY() + 0.15 - camera.y;
                 quad(fill, matrix, x1, z1, x2, z2, y, red, green, blue, alpha);
             }
 
@@ -90,7 +89,7 @@ public final class ChessWorldHighlights {
             double x2 = checkKingSquare.getX() + 0.965 - camera.x;
             double z1 = checkKingSquare.getZ() + 0.035 - camera.z;
             double z2 = checkKingSquare.getZ() + 0.965 - camera.z;
-            double y = checkKingSquare.getY() + 0.132 - camera.y;
+            double y = checkKingSquare.getY() + 0.15 - camera.y;
             quad(fill, matrix, x1, z1, x2, z2, y, 255, 20, 20, 118);
         }
     }
