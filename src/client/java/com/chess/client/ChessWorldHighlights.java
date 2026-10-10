@@ -39,7 +39,7 @@ public final class ChessWorldHighlights {
         if (board != null && board.length() == 64) cells = board;
         boardOrigin = origin == null ? BlockPos.ORIGIN : origin.toImmutable();
         checkKingSquare = null;
-        if (cells.length() != 64 || (!threeD && "NO_REALISM".equals(rules))) return;
+        if (cells.length() != 64) return;
         char[][] matrix = new char[8][8];
         for (int row = 0; row < 8; row++) for (int col = 0; col < 8; col++)
             matrix[row][col] = cells.charAt(row * 8 + col);
@@ -51,6 +51,12 @@ public final class ChessWorldHighlights {
                 return;
             }
         }
+    }
+
+    public static boolean isCheckCell(int row, int col) {
+        return checkKingSquare != null
+            && checkKingSquare.getX() == boardOrigin.getX() + col
+            && checkKingSquare.getZ() == boardOrigin.getZ() + row;
     }
 
     public static BlockPos selectedPosition() { return selected; }
