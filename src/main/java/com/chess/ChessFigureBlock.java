@@ -61,8 +61,9 @@ public class ChessFigureBlock extends BlockWithEntity {
 
     @Override
     public VoxelShape getCollisionShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
-        // Figures must be clickable but must not behave like an invisible wall.
-        return net.minecraft.util.shape.VoxelShapes.empty();
+        // Make the full visible figure physically solid. The volume intentionally extends
+        // below/above the logical block position to align with the model rendered on the tile.
+        return RAYCAST_HITBOX;
     }
 
     private static int dyeRgb(net.minecraft.util.DyeColor color) {
