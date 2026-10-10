@@ -1,6 +1,8 @@
 package com.chess;
 
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.UUID;
@@ -28,6 +30,7 @@ public final class ChessGameManager {
     public enum MatchMode { ONE_ONE, TWO_TWO }
 
     private static final Map<RegistryKey<World>, BoardState> BOARDS = new HashMap<>();
+    private static final Set<UUID> KIT_SLOT_WARNED = new HashSet<>();
 
     private ChessGameManager() {}
 
@@ -221,9 +224,13 @@ public final class ChessGameManager {
 
         if (!shouldHaveKit) {
             clearFigureItems(inventory);
+            KIT_SLOT_WARNED.remove(player.getUuid());
             return;
         }
-        if (hasCorrectPieceKit(inventory, white)) return;
+        if (hasCorrectPieceKit(inventory, white)) {
+            KIT_SLOT_WARNED.remove(player.getUuid());
+            return;
+        }
 
         clearFigureItems(inventory);
         int emptySlots = 0;
@@ -231,9 +238,11 @@ public final class ChessGameManager {
         int pieceKinds = 0;
         for (ChessPieceType type : ChessPieceType.values()) if (type.isWhite() == white) pieceKinds++;
         if (emptySlots < pieceKinds) {
-            player.sendMessage(Text.literal("Для комплекта шахмат освободи хотя бы " + pieceKinds + " слотов инвентаря."), true);
+            if (KIT_SLOT_WARNED.add(player.getUuid()))
+                player.sendMessage(Text.literal("Для комплекта шахмат освободи хотя бы " + pieceKinds + " слотов инвентаря."), true);
             return;
         }
+        KIT_SLOT_WARNED.remove(player.getUuid());
 
         for (ChessPieceType type : ChessPieceType.values()) {
             if (type.isWhite() != white) continue;
