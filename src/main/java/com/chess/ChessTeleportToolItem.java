@@ -19,12 +19,8 @@ public class ChessTeleportToolItem extends Item {
         net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
         boolean white = team == null || !team.getName().equals("black");
         if (player.isSneaking()) {
-            BlockPos destination = ChessGameManager.teleportTarget(world, white);
-            if (destination == null) player.sendMessage(Text.literal("Точка команды не настроена. ПКМ по блоку сохраняет точку."), false);
-            else {
-                player.teleport(world, destination.getX() + 0.5, destination.getY() + 1.0, destination.getZ() + 0.5, player.getYaw(), player.getPitch());
-                player.sendMessage(Text.literal("Телепортация выполнена."), false);
-            }
+            if (!ChessGameManager.teleportTeamToConfiguredTarget(world, white))
+                player.sendMessage(Text.literal("Точка команды не настроена либо в команде нет игроков."), false);
         } else {
             ChessGameManager.setTeleport(world, white, context.getBlockPos());
             player.sendMessage(Text.literal("TP-точка сохранена для команды " + (white ? "white" : "black") + "."), false);
