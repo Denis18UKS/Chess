@@ -195,10 +195,12 @@ public final class ChessGameManager {
         List<Character> captured = white ? state.whiteCapturedPieces : state.blackCapturedPieces;
         StringBuilder result = new StringBuilder();
         for (char capturedSymbol : captured) {
+            ChessPieceType capturedType = ChessPieceType.fromSymbol(capturedSymbol);
+            if (capturedType == null || capturedType.isWhite() == white) continue;
             char kind = Character.toUpperCase(capturedSymbol);
             if ("QRBN".indexOf(kind) >= 0 && result.indexOf(String.valueOf(kind)) < 0) result.append(kind);
         }
-        return result.length() == 0 ? "QRBN" : result.toString();
+        return result.toString();
     }
 
     public static void choosePromotion(ServerPlayerEntity player, String choice) {
@@ -214,13 +216,33 @@ public final class ChessGameManager {
             tell(player, "Эта фигура недоступна для превращения.");
             return;
         }
+        List<Character> captured = state.promotionWhite ? state.whiteCapturedPieces : state.blackCapturedPieces;
+        int capturedIndex = -1;
+        for (int i = 0; i < captured.size(); i++) {
+            ChessPieceType candidate = ChessPieceType.fromSymbol(captured.get(i));
+            if (candidate != null && candidate.isWhite() != state.promotionWhite
+                && Character.toUpperCase(captured.get(i)) == kind) {
+                capturedIndex = i;
+                break;
+            }
+        }
+        if (capturedIndex < 0) {
+            tell(player, "Такой фигуры больше нет на поле срубленных: сначала нужно взять её.");
+            return;
+        }
         char symbol = state.promotionWhite ? kind : Character.toLowerCase(kind);
+        char pawnSymbol = state.promotionWhite ? 'P' : 'p';
         BlockPos pos = piecePos(state, state.promotionRow, state.promotionCol);
         float yaw = world.getBlockEntity(pos) instanceof ChessFigureBlockEntity entity ? entity.getYawDegrees() : 0.0f;
         ChessPieceType promoted = ChessPieceType.fromSymbol(symbol);
-        if (promoted == null) return;
+        ChessPieceType pawn = ChessPieceType.fromSymbol(pawnSymbol);
+        if (promoted == null || pawn == null) return;
         world.setBlockState(pos, promoted.block().getDefaultState(), 3);
         if (world.getBlockEntity(pos) instanceof ChessFigureBlockEntity entity) entity.setYawDegrees(yaw);
+        // The captured piece is consumed by the promotion; replace its tray slot with the promoting pawn.
+        captured.set(capturedIndex, pawnSymbol);
+        BlockPos tray = state.promotionWhite ? state.whiteCaptureOrigin : state.blackCaptureOrigin;
+        if (tray != null) placeCapturedBlock(world, tray, capturedIndex, pawnSymbol);
         state.promotionPending = false;
         state.promotionPlayerId = null;
         if (state.ruleMode != RuleMode.NO_REALISM || state.threeDimensional) state.whiteTurn = !state.whiteTurn;
