@@ -12,6 +12,8 @@ import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
+import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
@@ -43,6 +45,13 @@ public class ChessModClient implements ClientModInitializer {
             if (world.isClient && ChessClientNetwork.threeDimensional && !player.isSneaking()) {
                 BlockPos clickedPos = hit.getBlockPos();
                 var clickedState = world.getBlockState(clickedPos);
+                if (clickedState.isOf(ModBlocks.CHESS_WHITE_SQUARE) || clickedState.isOf(ModBlocks.CHESS_BLACK_SQUARE)) {
+                    BlockPos lowerModelHit = findVisibleFigureHit(player, world, hit.getPos());
+                    if (lowerModelHit != null) {
+                        clickedPos = lowerModelHit;
+                        clickedState = world.getBlockState(clickedPos);
+                    }
+                }
                 var clickedPiece = com.chess.ChessPieceType.fromBlock(clickedState);
                 if (clickedPiece != null) {
                     BlockPos selected = ChessWorldHighlights.selectedPosition();
@@ -89,6 +98,38 @@ public class ChessModClient implements ClientModInitializer {
             }
             return TypedActionResult.pass(stack);
         });
+    }
+
+    /**
+     * Block raycasts are voxel-based: the chess model is rendered below its logical block.
+     * If the board tile wins the normal raycast first, test visible chess model bounds and
+     * route the click to the nearest figure that lies in front of the tile hit.
+     */
+    private static BlockPos findVisibleFigureHit(net.minecraft.entity.player.PlayerEntity player,
+                                                  net.minecraft.world.World world, Vec3d tileHitPos) {
+        Vec3d start = player.getCameraPosVec(1.0F);
+        Vec3d end = start.add(player.getRotationVec(1.0F).multiply(6.0));
+        double bestDistance = tileHitPos.squaredDistanceTo(start);
+        BlockPos best = null;
+        BlockPos origin = ChessBoardScreen.getBoardOrigin();
+        for (int row = 0; row < 8; row++) {
+            for (int col = 0; col < 8; col++) {
+                if (ChessBoardScreen.cellAt(row, col) == '.') continue;
+                BlockPos piecePos = origin.add(col, 1, row);
+                if (com.chess.ChessPieceType.fromBlock(world.getBlockState(piecePos)) == null) continue;
+                // This AABB follows the model from the 2px board surface to its crown/top.
+                Box modelBounds = new Box(piecePos.getX() + 0.06, piecePos.getY() - 0.875, piecePos.getZ() + 0.06,
+                    piecePos.getX() + 0.94, piecePos.getY() + 0.95, piecePos.getZ() + 0.94);
+                var intercept = modelBounds.raycast(start, end);
+                if (intercept.isEmpty()) continue;
+                double distance = intercept.get().squaredDistanceTo(start);
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    best = piecePos;
+                }
+            }
+        }
+        return best;
     }
 
     private static void openBoard(net.minecraft.item.Item item) {
