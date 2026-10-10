@@ -38,6 +38,16 @@ public final class ChessCommands {
                 ChessGameManager.autoConfigureCaptures(ctx.getSource().getWorld());
                 return 1;
             })))
+            .then(literal("reset").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
+                try {
+                    ChessGameManager.resetBoard(ctx.getSource().getWorld());
+                    ctx.getSource().sendFeedback(() -> Text.literal("Chess: начальная расстановка восстановлена."), false);
+                    return 1;
+                } catch (IllegalStateException ex) {
+                    ctx.getSource().sendError(Text.literal(ex.getMessage()));
+                    return 0;
+                }
+            }))
             .then(literal("start").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
                 try {
                     ChessGameManager.start(ctx.getSource().getWorld());
@@ -145,6 +155,7 @@ public final class ChessCommands {
             return 0;
         }
         scoreboard.addPlayerToTeam(player.getEntityName(), team);
+        ChessGameManager.giveTeamPieces(player, name.equals("white"));
         source.sendFeedback(() -> Text.literal("Вы присоединились к команде " + name + "."), false);
         return 1;
     }
