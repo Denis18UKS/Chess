@@ -124,3 +124,18 @@ The repository's original license is CC0-1.0.
 ## Human vs bot
 
 In `vs_bot` mode, choose either side with `/chess white` or `/chess black` before starting. Exactly one human must select a side; the bot automatically takes the opposite color. The choice can be changed before the match by running the other side-selection command. The bot evaluates its move plus the strongest legal reply, including material balance, exposed pieces, checks, centre control and pawn advancement, rather than preferring every capture by default. White knights are normalized to face the black side; black knights face white.
+
+
+## Настройка шахматного бота
+
+Настройки сохраняются в конфигурации мира:
+- `/chess bot difficulty easy|medium|high|professional` — лёгкий, средний, высокий и профессиональный уровни. Средний анализирует ответ соперника; высокий рассматривает дополнительный ответный ход; профессиональный использует более глубокий поиск с ограниченной шириной для снижения нагрузки сервера.
+- `/chess bot style balanced|aggressive|defensive|positional` — сбалансированный, агрессивный, защитный или позиционный стиль.
+- `/chess bot status` — посмотреть текущие настройки.
+
+## DEV-инструменты проверки бота и превращения
+
+Включи `/chessdev`, затем:
+- `/chessdev botpieces pawn` — заставить бота ходить только пешками; поддерживаются `pawn`, `rook`, `knight`, `bishop`, `queen`, `king` и списки через запятую, например `pawn,knight`. `all` возвращает весь набор, `none` временно запрещает любые ходы бота. Это фильтр тестирования, не правило шахмат; если у выбранных фигур нет легального хода, матч не завершается автоматически.
+- `/chessdev promotionstock white queen` — добавить ферзя в запас лотка белых для проверки превращения; для чёрных используй `black` и тип `queen`, `rook`, `bishop` или `knight`. Такой запас позволяет тестировать обмен: выбранная запасная фигура выходит из лотка, а пешка, достигшая края, занимает её слот в лотке.
+- При обычном превращении интерфейс показывает только фигуры реально доступные в лотке стороны, которая продвигает пешку. Бот предпочитает ферзя, если тот доступен; иначе выбирает лучший доступный вариант в пределах текущего уровня.

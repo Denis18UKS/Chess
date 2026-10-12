@@ -37,6 +37,8 @@ public final class ChessWorldConfig extends PersistentState {
     // 0=off, 1=temporary (turn change only), 2=permanent while the match is active.
     private int turnHudMode = 2;
     private boolean triggerZonesVisible;
+    private BotDifficulty botDifficulty = BotDifficulty.MEDIUM;
+    private BotStyle botStyle = BotStyle.BALANCED;
     private ChessGameManager.MatchMode matchMode = ChessGameManager.MatchMode.ONE_ONE;
     private ChessGameManager.RuleMode ruleMode = ChessGameManager.RuleMode.REALISM;
 
@@ -105,6 +107,18 @@ public final class ChessWorldConfig extends PersistentState {
     public boolean areTriggerZonesVisible() { return triggerZonesVisible; }
     public void setTriggerZonesVisible(boolean visible) {
         triggerZonesVisible = visible;
+        markDirty();
+    }
+
+    public BotDifficulty getBotDifficulty() { return botDifficulty; }
+    public void setBotDifficulty(BotDifficulty difficulty) {
+        botDifficulty = difficulty == null ? BotDifficulty.MEDIUM : difficulty;
+        markDirty();
+    }
+
+    public BotStyle getBotStyle() { return botStyle; }
+    public void setBotStyle(BotStyle style) {
+        botStyle = style == null ? BotStyle.BALANCED : style;
         markDirty();
     }
 
@@ -255,6 +269,8 @@ public final class ChessWorldConfig extends PersistentState {
         nbt.putInt("matchDurationMinutes", matchDurationMinutes);
         nbt.putInt("turnHudMode", turnHudMode);
         nbt.putBoolean("triggerZonesVisible", triggerZonesVisible);
+        nbt.putString("botDifficulty", botDifficulty.name());
+        nbt.putString("botStyle", botStyle.name());
         nbt.putString("matchMode", matchMode.name());
         nbt.putString("ruleMode", ruleMode.name());
         return nbt;
@@ -305,11 +321,23 @@ public final class ChessWorldConfig extends PersistentState {
         if (nbt.contains("matchDurationMinutes")) config.matchDurationMinutes = Math.max(0, Math.min(1440, nbt.getInt("matchDurationMinutes")));
         if (nbt.contains("turnHudMode")) config.turnHudMode = Math.max(0, Math.min(2, nbt.getInt("turnHudMode")));
         if (nbt.contains("triggerZonesVisible")) config.triggerZonesVisible = nbt.getBoolean("triggerZonesVisible");
+        try { config.botDifficulty = BotDifficulty.valueOf(nbt.getString("botDifficulty")); }
+        catch (IllegalArgumentException ignored) {}
+        try { config.botStyle = BotStyle.valueOf(nbt.getString("botStyle")); }
+        catch (IllegalArgumentException ignored) {}
         try { config.matchMode = ChessGameManager.MatchMode.valueOf(nbt.getString("matchMode")); }
         catch (IllegalArgumentException ignored) {}
         try { config.ruleMode = ChessGameManager.RuleMode.valueOf(nbt.getString("ruleMode")); }
         catch (IllegalArgumentException ignored) {}
         return config;
+    }
+
+    public enum BotDifficulty {
+        EASY, MEDIUM, HIGH, PROFESSIONAL
+    }
+
+    public enum BotStyle {
+        BALANCED, AGGRESSIVE, DEFENSIVE, POSITIONAL
     }
 
     public static final class SavedPos {

@@ -1300,6 +1300,109 @@ public final class ChessGameManager {
         ChessNetwork.broadcastBoard(world);
     }
 
+    public static boolean setBotAllowedPieces(ServerPlayerEntity player, String selection) {
+        if (!player.getCommandTags().contains("chess_dev")) {
+            player.sendMessage(Text.literal("Включи /chessdev, чтобы менять фигуры бота для тестирования."), false);
+            return false;
+        }
+        if (selection == null || selection.isBlank()) {
+            player.sendMessage(Text.literal("Укажи all, pawn, rook, knight, bishop, queen, king или список через запятую."), false);
+            return false;
+        }
+        String input = selection.toLowerCase(java.util.Locale.ROOT);
+        String allowed;
+        if (input.equals("all") || input.equals("reset")) {
+            allowed = "KQRBNP";
+        } else if (input.equals("none")) {
+            allowed = "";
+        } else {
+            java.util.Set<Character> picked = new java.util.HashSet<>();
+            for (String token : input.split("[,+]")) {
+                String item = token.trim();
+                char kind;
+                switch (item) {
+                    case "pawn": case "p": kind = 'P'; break;
+                    case "rook": case "r": kind = 'R'; break;
+                    case "knight": case "n": kind = 'N'; break;
+                    case "bishop": case "b": kind = 'B'; break;
+                    case "queen": case "q": kind = 'Q'; break;
+                    case "king": case "k": kind = 'K'; break;
+                    default:
+                        player.sendMessage(Text.literal("Неизвестная фигура: " + item
+                            + ". Пример: /chessdev botpieces pawn,knight"), false);
+                        return false;
+                }
+                picked.add(kind);
+            }
+            StringBuilder ordered = new StringBuilder();
+            for (char kind : "KQRBNP".toCharArray()) if (picked.contains(kind)) ordered.append(kind);
+            allowed = ordered.toString();
+        }
+        BoardState state = board(player.getServerWorld());
+        state.botAllowedPieces = allowed;
+        state.botNoMovesNotice = false;
+        if (state.running && state.matchMode == MatchMode.ONE_VS_BOT && state.whiteTurn == state.botWhite)
+            state.botMoveAtTick = serverTick(player.getServer()) + 1L;
+        player.sendMessage(Text.literal("DEV: бот может ходить фигурами: " + describeBotPieces(allowed)
+            + ". Сброс: /chessdev botpieces all."), false);
+        return true;
+    }
+
+    public static boolean addPromotionStock(ServerPlayerEntity player, String side, String pieceName) {
+        if (!player.getCommandTags().contains("chess_dev")) {
+            player.sendMessage(Text.literal("Включи /chessdev, чтобы выдавать запасные фигуры для проверки превращения."), false);
+            return false;
+        }
+        boolean white;
+        if ("white".equalsIgnoreCase(side) || "белые".equalsIgnoreCase(side)) white = true;
+        else if ("black".equalsIgnoreCase(side) || "чёрные".equalsIgnoreCase(side)
+            || "черные".equalsIgnoreCase(side)) white = false;
+        else {
+            player.sendMessage(Text.literal("Сторона должна быть white или black."), false);
+            return false;
+        }
+        String token = pieceName == null ? "" : pieceName.toLowerCase(java.util.Locale.ROOT);
+        char kind;
+        switch (token) {
+            case "queen": case "q": kind = 'Q'; break;
+            case "rook": case "r": kind = 'R'; break;
+            case "bishop": case "b": kind = 'B'; break;
+            case "knight": case "n": kind = 'N'; break;
+            default:
+                player.sendMessage(Text.literal("Для превращения доступны queen, rook, bishop или knight."), false);
+                return false;
+        }
+        BoardState state = board(player.getServerWorld());
+        if (!state.configured) {
+            player.sendMessage(Text.literal("Сначала настрой шахматное поле, затем добавляй запас фигур."), false);
+            return false;
+        }
+        List<Character> stock = white ? state.whiteCapturedPieces : state.blackCapturedPieces;
+        if (stock.size() >= 16) {
+            player.sendMessage(Text.literal("Лоток срубленных фигур уже заполнен."), false);
+            return false;
+        }
+        // A white player trades from the white captures tray (black figure stock); black analogously uses white pieces.
+        char symbol = white ? Character.toLowerCase(kind) : kind;
+        registerCapturedPiece(player.getServerWorld(), state, symbol, white);
+        ChessNetwork.broadcastBoard(player.getServerWorld());
+        player.sendMessage(Text.literal("DEV: в лоток " + (white ? "белых" : "чёрных")
+            + " добавлена запасная фигура для превращения: " + token + "."), false);
+        return true;
+    }
+
+    private static String describeBotPieces(String allowed) {
+        if (allowed == null || allowed.isBlank()) return "нет (бот пропускает ход)";
+        StringBuilder names = new StringBuilder();
+        for (char kind : "KQRBNP".toCharArray()) {
+            if (!allowed.contains(String.valueOf(kind))) continue;
+            if (names.length() > 0) names.append(", ");
+            names.append(kind == 'K' ? "король" : kind == 'Q' ? "ферзь" : kind == 'R' ? "ладья"
+                : kind == 'B' ? "слон" : kind == 'N' ? "конь" : "пешка");
+        }
+        return names.toString();
+    }
+
     public static boolean switchDevTeam(ServerPlayerEntity player) {
         if (!player.getCommandTags().contains("chess_dev")) return false;
         MinecraftServer server = player.getServer();
@@ -1378,13 +1481,18 @@ public final class ChessGameManager {
 
     public static String promotionOptions(BoardState state, boolean white) {
         List<Character> captured = white ? state.whiteCapturedPieces : state.blackCapturedPieces;
-        StringBuilder result = new StringBuilder();
+        StringBuilder available = new StringBuilder();
         for (char capturedSymbol : captured) {
             ChessPieceType capturedType = ChessPieceType.fromSymbol(capturedSymbol);
             if (capturedType == null || capturedType.isWhite() == white) continue;
             char kind = Character.toUpperCase(capturedSymbol);
-            if ("QRBN".indexOf(kind) >= 0 && result.indexOf(String.valueOf(kind)) < 0) result.append(kind);
+            if ("QRBN".indexOf(kind) >= 0 && available.indexOf(String.valueOf(kind)) < 0)
+                available.append(kind);
         }
+        // Stable ordering prevents the bot from choosing the first captured piece accidentally.
+        StringBuilder result = new StringBuilder();
+        for (char kind : "QRBN".toCharArray())
+            if (available.indexOf(String.valueOf(kind)) >= 0) result.append(kind);
         return result.toString();
     }
 
@@ -1853,71 +1961,169 @@ public final class ChessGameManager {
         if (tick < state.botMoveAtTick) return;
 
         boolean botWhite = state.botWhite;
+        ChessWorldConfig config = ChessWorldConfig.get(world.getServer());
+        ChessWorldConfig.BotDifficulty difficulty = config.getBotDifficulty();
+        ChessWorldConfig.BotStyle style = config.getBotStyle();
+        String allowedPieces = state.botAllowedPieces;
         BotPosition root = new BotPosition(readBoard(world), state);
-        List<int[]> legalMoves = legalBotMoves(root, botWhite);
+        List<int[]> legalMoves = legalBotMoves(root, botWhite, allowedPieces);
         if (legalMoves.isEmpty()) {
             state.botMoveAtTick = -1L;
-            checkEndCondition(world, state);
+            if (!state.botNoMovesNotice) {
+                broadcast(world, "DEV: у бота нет допустимого хода выбранными фигурами (" 
+                    + describeBotPieces(allowedPieces) + "). Измени фильтр: /chessdev botpieces all.");
+                state.botNoMovesNotice = true;
+            }
+            // Do not call checkEndCondition here: a DEV piece filter must never end a chess game.
             return;
         }
+        state.botNoMovesNotice = false;
 
-        String promotionOptions = promotionOptions(state, botWhite);
-        char promotionKind = promotionOptions.isEmpty() ? 0 : promotionOptions.charAt(0);
-        String opponentPromotionOptions = promotionOptions(state, !botWhite);
-        char opponentPromotionKind = opponentPromotionOptions.isEmpty() ? 0 : opponentPromotionOptions.charAt(0);
+        String botPromotionOptions = promotionOptions(state, botWhite);
+        String humanPromotionOptions = promotionOptions(state, !botWhite);
+        char botPromotionKind = preferredPromotionKind(botPromotionOptions, difficulty);
+        char humanPromotionKind = preferredPromotionKind(humanPromotionOptions, difficulty);
 
-        // One full reply ply: the bot values each candidate by the opponent's best legal reply,
-        // rather than awarding a huge fixed bonus for any capture. This filters obvious hanging pieces.
+        int depth;
+        int beamWidth;
+        switch (difficulty) {
+            case EASY:
+                depth = 0;
+                beamWidth = 1;
+                break;
+            case HIGH:
+                depth = 2;
+                beamWidth = 8;
+                break;
+            case PROFESSIONAL:
+                depth = 3;
+                beamWidth = 6;
+                break;
+            case MEDIUM:
+            default:
+                depth = 1;
+                beamWidth = 12;
+                break;
+        }
+
         List<BotMoveChoice> scored = new ArrayList<>();
         int bestScore = Integer.MIN_VALUE;
         for (int[] move : legalMoves) {
-            BotPosition afterBot = root.after(move, promotionKind);
-            List<int[]> replies = legalBotMoves(afterBot, !botWhite);
+            BotPosition afterBot = root.after(move, botPromotionKind);
             int score;
-            if (replies.isEmpty()) {
-                // Checkmate is a win; stalemate is a draw, even if the bot is materially ahead.
-                score = ChessRules.isInCheck(afterBot.cells, !botWhite)
-                    ? BOT_MATE_SCORE : 0;
+            if (difficulty == ChessWorldConfig.BotDifficulty.EASY) {
+                // Easy: just one-step evaluation, then deliberately pick among several
+                // plausible moves. It remains legal, but is less consistent tactically.
+                score = evaluateBotPosition(afterBot, botWhite, style);
+                if (ChessRules.isInCheck(afterBot.cells, !botWhite)) score += 24;
+                char moving = root.cells[move[0]][move[1]];
+                if (Character.toUpperCase(moving) == 'P')
+                    score += (botWhite ? 6 - move[2] : move[2] - 1) * 2;
             } else {
-                int worstReply = Integer.MAX_VALUE;
-                for (int[] reply : replies) {
-                    BotPosition afterReply = afterBot.after(reply, opponentPromotionKind);
-                    int replyScore = evaluateBotPosition(afterReply, botWhite);
-                    if (ChessRules.isInCheck(afterReply.cells, botWhite)) {
-                        List<int[]> botContinuation = legalBotMoves(afterReply, botWhite);
-                        if (botContinuation.isEmpty()) replyScore = -BOT_MATE_SCORE;
-                        else replyScore -= 70;
-                    }
-                    if (replyScore < worstReply) worstReply = replyScore;
-                }
-                score = worstReply;
+                int[] nodes = {0};
+                score = searchBotPosition(afterBot, !botWhite, botWhite, depth,
+                    Integer.MIN_VALUE + 1, Integer.MAX_VALUE - 1, 1, beamWidth,
+                    allowedPieces, botPromotionKind, humanPromotionKind, style, nodes);
             }
-            // Small preference for checks and advancing a pawn; it is intentionally far
-            // smaller than piece values, so it cannot outweigh a clear material loss.
-            if (ChessRules.isInCheck(afterBot.cells, !botWhite)) score += 18;
-            char moving = root.cells[move[0]][move[1]];
-            if (Character.toUpperCase(moving) == 'P')
-                score += (botWhite ? 6 - move[2] : move[2] - 1) * 2;
             scored.add(new BotMoveChoice(move, score));
             if (score > bestScore) bestScore = score;
         }
 
-        final int cutoff = bestScore - 4;
-        List<int[]> nearBest = new ArrayList<>();
-        for (BotMoveChoice choice : scored) if (choice.score >= cutoff) nearBest.add(choice.move);
-        int[] move = nearBest.get(world.getRandom().nextInt(nearBest.size()));
+        // More noise at the easy level; professional mode normally picks the best-scored move.
+        int tolerance = difficulty == ChessWorldConfig.BotDifficulty.EASY ? 260
+            : difficulty == ChessWorldConfig.BotDifficulty.MEDIUM ? 70
+            : difficulty == ChessWorldConfig.BotDifficulty.HIGH ? 18 : 2;
+        List<int[]> candidates = new ArrayList<>();
+        for (BotMoveChoice choice : scored)
+            if (choice.score >= bestScore - tolerance) candidates.add(choice.move);
+        int[] move = candidates.get(world.getRandom().nextInt(candidates.size()));
         state.botMoveAtTick = -1L;
-        broadcast(world, "Ход бота.");
+        broadcast(world, "Ход бота (" + difficultyLabel(difficulty) + ").");
         scheduleMove(world, state, move[0], move[1], move[2], move[3], BOT_PLAYER_ID, null);
+    }
+
+    private static String difficultyLabel(ChessWorldConfig.BotDifficulty difficulty) {
+        switch (difficulty) {
+            case EASY: return "лёгкий";
+            case HIGH: return "высокий";
+            case PROFESSIONAL: return "профессиональный";
+            case MEDIUM:
+            default: return "средний";
+        }
+    }
+
+    private static char preferredPromotionKind(String options, ChessWorldConfig.BotDifficulty difficulty) {
+        if (options == null || options.isEmpty()) return 0;
+        if (difficulty == ChessWorldConfig.BotDifficulty.EASY) return options.charAt(0);
+        return options.indexOf('Q') >= 0 ? 'Q' : options.charAt(0);
+    }
+
+    private static int searchBotPosition(BotPosition position, boolean sideToMove, boolean botWhite,
+                                         int depth, int alpha, int beta, int ply, int beamWidth,
+                                         String allowedPieces, char botPromotionKind, char humanPromotionKind,
+                                         ChessWorldConfig.BotStyle style, int[] nodes) {
+        nodes[0]++;
+        if (depth <= 0 || nodes[0] > 4500) return evaluateBotPosition(position, botWhite, style);
+
+        List<int[]> moves = legalBotMoves(position, sideToMove,
+            sideToMove == botWhite ? allowedPieces : null);
+        if (moves.isEmpty()) {
+            if (ChessRules.isInCheck(position.cells, sideToMove))
+                return sideToMove == botWhite ? -BOT_MATE_SCORE + ply : BOT_MATE_SCORE - ply;
+            return 0; // Stalemate.
+        }
+
+        moves.sort((first, second) -> Integer.compare(
+            moveOrderingScore(position, second), moveOrderingScore(position, first)));
+        if (beamWidth > 0 && moves.size() > beamWidth)
+            moves = new ArrayList<>(moves.subList(0, beamWidth));
+
+        boolean maximizing = sideToMove == botWhite;
+        int best = maximizing ? Integer.MIN_VALUE + 1 : Integer.MAX_VALUE - 1;
+        char promotionKind = sideToMove == botWhite ? botPromotionKind : humanPromotionKind;
+        for (int[] move : moves) {
+            BotPosition next = position.after(move, promotionKind);
+            int value = searchBotPosition(next, !sideToMove, botWhite, depth - 1,
+                alpha, beta, ply + 1, beamWidth, allowedPieces,
+                botPromotionKind, humanPromotionKind, style, nodes);
+            if (maximizing) {
+                if (value > best) best = value;
+                alpha = Math.max(alpha, best);
+            } else {
+                if (value < best) best = value;
+                beta = Math.min(beta, best);
+            }
+            if (beta <= alpha || nodes[0] > 4500) break;
+        }
+        return best;
+    }
+
+    private static int moveOrderingScore(BotPosition position, int[] move) {
+        int fr = move[0], fc = move[1], tr = move[2], tc = move[3];
+        char moving = position.cells[fr][fc];
+        char target = position.cells[tr][tc];
+        int score = 0;
+        if (target != '.') score += pieceValue(target) * 100 - pieceValue(moving) * 8;
+        if (Character.toUpperCase(moving) == 'P' && (tr == 0 || tr == 7)) score += 700;
+        if (Character.toUpperCase(moving) == 'P' && Math.abs(tc - fc) == 1
+            && target == '.' && tr == position.enPassantRow && tc == position.enPassantCol) score += 90;
+        int centre = 7 - Math.abs(2 * tr - 7) - Math.abs(2 * tc - 7);
+        score += centre;
+        return score;
     }
 
     private static final int BOT_MATE_SCORE = 100_000;
 
     private static List<int[]> legalBotMoves(BotPosition position, boolean white) {
+        return legalBotMoves(position, white, null);
+    }
+
+    private static List<int[]> legalBotMoves(BotPosition position, boolean white, String allowedKinds) {
         List<int[]> moves = new ArrayList<>();
         for (int fr = 0; fr < 8; fr++) for (int fc = 0; fc < 8; fc++) {
             char piece = position.cells[fr][fc];
             if (piece == '.' || ChessRules.isWhite(piece) != white) continue;
+            if (allowedKinds != null && !allowedKinds.contains(String.valueOf(Character.toUpperCase(piece)))) continue;
             for (int tr = 0; tr < 8; tr++) for (int tc = 0; tc < 8; tc++) {
                 char target = position.cells[tr][tc];
                 if (target != '.' && Character.toUpperCase(target) == 'K') continue;
@@ -1935,6 +2141,10 @@ public final class ChessGameManager {
 
     /** Static material, centre control and hanging-piece evaluation from the bot's point of view. */
     private static int evaluateBotPosition(BotPosition position, boolean botWhite) {
+        return evaluateBotPosition(position, botWhite, ChessWorldConfig.BotStyle.BALANCED);
+    }
+
+    private static int evaluateBotPosition(BotPosition position, boolean botWhite, ChessWorldConfig.BotStyle style) {
         char[][] cells = position.cells;
         int score = 0;
         for (int row = 0; row < 8; row++) for (int col = 0; col < 8; col++) {
@@ -1948,11 +2158,13 @@ public final class ChessGameManager {
 
             if (kind == 'P') {
                 int progress = white ? 6 - row : row - 1;
-                score += sign * Math.max(0, progress) * 5;
+                int progressWeight = style == ChessWorldConfig.BotStyle.POSITIONAL ? 9 : 5;
+                score += sign * Math.max(0, progress) * progressWeight;
             } else if (kind != 'K') {
                 int centre = 7 - Math.abs(2 * row - 7) - Math.abs(2 * col - 7);
-                if (kind == 'N' || kind == 'B') score += sign * centre * 5;
-                else if (kind == 'Q') score += sign * centre * 2;
+                int centreWeight = style == ChessWorldConfig.BotStyle.POSITIONAL ? 10 : 5;
+                if (kind == 'N' || kind == 'B') score += sign * centre * centreWeight;
+                else if (kind == 'Q') score += sign * centre * (style == ChessWorldConfig.BotStyle.POSITIONAL ? 4 : 2);
             }
 
             // Penalize hanging material. A defended piece is still at risk, but less so;
@@ -1962,11 +2174,14 @@ public final class ChessGameManager {
                 withoutTarget[row][col] = '.';
                 boolean defended = ChessRules.isAttacked(withoutTarget, row, col, white);
                 int loss = Math.max(8, value * (defended ? 10 : 36) / 100);
+                if (white == botWhite && style == ChessWorldConfig.BotStyle.DEFENSIVE) loss *= 2;
+                if (white != botWhite && style == ChessWorldConfig.BotStyle.AGGRESSIVE) loss = loss * 125 / 100;
+                if (white == botWhite && style == ChessWorldConfig.BotStyle.AGGRESSIVE) loss = loss * 80 / 100;
                 score -= sign * loss;
             }
         }
-        if (ChessRules.isInCheck(cells, botWhite)) score -= 65;
-        if (ChessRules.isInCheck(cells, !botWhite)) score += 65;
+        if (ChessRules.isInCheck(cells, botWhite)) score -= style == ChessWorldConfig.BotStyle.DEFENSIVE ? 110 : 65;
+        if (ChessRules.isInCheck(cells, !botWhite)) score += style == ChessWorldConfig.BotStyle.AGGRESSIVE ? 100 : 65;
         return score;
     }
 
@@ -2252,6 +2467,9 @@ public final class ChessGameManager {
         public boolean whiteTurn = true;
         /** True when the computer controls the white pieces; otherwise the computer controls black. */
         public boolean botWhite;
+        /** Optional DEV-only filter for which kinds of pieces the bot may move. */
+        public String botAllowedPieces = "KQRBNP";
+        public boolean botNoMovesNotice;
         public RuleMode ruleMode = RuleMode.REALISM;
         public MatchMode matchMode = MatchMode.ONE_ONE;
         public int clockMinutes = 10;

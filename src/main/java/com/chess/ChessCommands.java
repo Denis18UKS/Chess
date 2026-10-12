@@ -120,6 +120,18 @@ public final class ChessCommands {
                     ChessGameManager.setLobbyDelay(ctx.getSource().getServer(), seconds);
                     return 1;
                 })) )
+            .then(literal("bot").requires(s -> s.hasPermissionLevel(2))
+                .then(literal("difficulty")
+                    .then(literal("easy").executes(ctx -> setBotDifficulty(ctx.getSource(), ChessWorldConfig.BotDifficulty.EASY)))
+                    .then(literal("medium").executes(ctx -> setBotDifficulty(ctx.getSource(), ChessWorldConfig.BotDifficulty.MEDIUM)))
+                    .then(literal("high").executes(ctx -> setBotDifficulty(ctx.getSource(), ChessWorldConfig.BotDifficulty.HIGH)))
+                    .then(literal("professional").executes(ctx -> setBotDifficulty(ctx.getSource(), ChessWorldConfig.BotDifficulty.PROFESSIONAL))))
+                .then(literal("style")
+                    .then(literal("balanced").executes(ctx -> setBotStyle(ctx.getSource(), ChessWorldConfig.BotStyle.BALANCED)))
+                    .then(literal("aggressive").executes(ctx -> setBotStyle(ctx.getSource(), ChessWorldConfig.BotStyle.AGGRESSIVE)))
+                    .then(literal("defensive").executes(ctx -> setBotStyle(ctx.getSource(), ChessWorldConfig.BotStyle.DEFENSIVE)))
+                    .then(literal("positional").executes(ctx -> setBotStyle(ctx.getSource(), ChessWorldConfig.BotStyle.POSITIONAL))))
+                .then(literal("status").executes(ctx -> showBotSettings(ctx.getSource()))))
             .then(literal("turnhud").requires(s -> s.hasPermissionLevel(2))
                 .then(literal("off").executes(ctx -> setTurnHud(ctx.getSource(), 0)))
                 .then(literal("temporary").executes(ctx -> setTurnHud(ctx.getSource(), 1)))
@@ -213,23 +225,78 @@ public final class ChessCommands {
             return 1;
         }));
 
-        dispatcher.register(literal("chessdev").executes(ctx -> {
-            ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
-            if (player.getCommandTags().contains("chess_dev")) {
-                player.getCommandTags().remove("chess_dev");
-                player.sendMessage(Text.literal("Режим разработчика выключен."), false);
-            } else {
-                player.addCommandTag("chess_dev");
-                player.sendMessage(Text.literal("Режим разработчика включён. Кейбинд смены команды активен."), false);
-            }
-            ChessNetwork.sendBoard(player);
-            return 1;
-        }));
+        dispatcher.register(literal("chessdev")
+            .executes(ctx -> {
+                ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
+                if (player.getCommandTags().contains("chess_dev")) {
+                    player.getCommandTags().remove("chess_dev");
+                    player.sendMessage(Text.literal("Режим разработчика выключен."), false);
+                } else {
+                    player.addCommandTag("chess_dev");
+                    player.sendMessage(Text.literal("Режим разработчика включён. Кейбинд смены команды активен."), false);
+                }
+                ChessNetwork.sendBoard(player);
+                return 1;
+            })
+            .then(literal("botpieces").then(argument("pieces", StringArgumentType.greedyString()).executes(ctx -> {
+                ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
+                return ChessGameManager.setBotAllowedPieces(player,
+                    StringArgumentType.getString(ctx, "pieces")) ? 1 : 0;
+            })))
+            .then(literal("promotionstock")
+                .then(argument("side", StringArgumentType.word())
+                    .then(argument("piece", StringArgumentType.word()).executes(ctx -> {
+                        ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
+                        return ChessGameManager.addPromotionStock(player,
+                            StringArgumentType.getString(ctx, "side"),
+                            StringArgumentType.getString(ctx, "piece")) ? 1 : 0;
+                    })))));
 
         dispatcher.register(literal("chessboard").then(literal("check").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
             ServerPlayerEntity player = ctx.getSource().getPlayer();
             return ChessGameManager.checkBoard(ctx.getSource().getWorld(), player) ? 1 : 0;
         })));
+    }
+
+    private static int setBotDifficulty(ServerCommandSource source, ChessWorldConfig.BotDifficulty difficulty) {
+        ChessWorldConfig config = ChessWorldConfig.get(source.getServer());
+        config.setBotDifficulty(difficulty);
+        source.sendFeedback(() -> Text.literal("Сложность бота: " + botDifficultyLabel(difficulty) + "."), false);
+        return 1;
+    }
+
+    private static int setBotStyle(ServerCommandSource source, ChessWorldConfig.BotStyle style) {
+        ChessWorldConfig config = ChessWorldConfig.get(source.getServer());
+        config.setBotStyle(style);
+        source.sendFeedback(() -> Text.literal("Стиль бота: " + botStyleLabel(style) + "."), false);
+        return 1;
+    }
+
+    private static int showBotSettings(ServerCommandSource source) {
+        ChessWorldConfig config = ChessWorldConfig.get(source.getServer());
+        source.sendFeedback(() -> Text.literal("Бот: " + botDifficultyLabel(config.getBotDifficulty())
+            + " · стиль: " + botStyleLabel(config.getBotStyle())), false);
+        return 1;
+    }
+
+    private static String botDifficultyLabel(ChessWorldConfig.BotDifficulty difficulty) {
+        switch (difficulty) {
+            case EASY: return "лёгкий";
+            case HIGH: return "высокий";
+            case PROFESSIONAL: return "профессиональный";
+            case MEDIUM:
+            default: return "средний";
+        }
+    }
+
+    private static String botStyleLabel(ChessWorldConfig.BotStyle style) {
+        switch (style) {
+            case AGGRESSIVE: return "агрессивный";
+            case DEFENSIVE: return "защитный";
+            case POSITIONAL: return "позиционный";
+            case BALANCED:
+            default: return "сбалансированный";
+        }
     }
 
     private static int setTurnHud(ServerCommandSource source, int mode) {
