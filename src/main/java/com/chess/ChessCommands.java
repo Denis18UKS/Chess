@@ -2,6 +2,7 @@ package com.chess;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.command.argument.BlockPosArgumentType;
 import net.minecraft.server.command.ServerCommandSource;
@@ -116,6 +117,32 @@ public final class ChessCommands {
                     ChessGameManager.setLobbyDelay(ctx.getSource().getServer(), seconds);
                     return 1;
                 })) )
+            .then(literal("turnhud").requires(s -> s.hasPermissionLevel(2))
+                .then(literal("off").executes(ctx -> setTurnHud(ctx.getSource(), 0)))
+                .then(literal("temporary").executes(ctx -> setTurnHud(ctx.getSource(), 1)))
+                .then(literal("permanent").executes(ctx -> setTurnHud(ctx.getSource(), 2))))
+            .then(literal("zones").requires(s -> s.hasPermissionLevel(2))
+                .then(literal("show").executes(ctx -> setZonesVisible(ctx.getSource(), true)))
+                .then(literal("hide").executes(ctx -> setZonesVisible(ctx.getSource(), false)))
+                .then(literal("toggle").executes(ctx -> {
+                    ChessWorldConfig config = ChessWorldConfig.get(ctx.getSource().getServer());
+                    return setZonesVisible(ctx.getSource(), !config.areTriggerZonesVisible());
+                })))
+            .then(literal("zone").requires(s -> s.hasPermissionLevel(2))
+                .then(literal("pos1").then(argument("pos", BlockPosArgumentType.blockPos()).executes(ctx -> {
+                    BlockPos pos = BlockPosArgumentType.getBlockPos(ctx, "pos");
+                    ChessWorldConfig.get(ctx.getSource().getServer()).saveZoneCorner(ctx.getSource().getWorld(), pos);
+                    ctx.getSource().sendFeedback(() -> Text.literal("Точка 1 сохранена: " + pos.toShortString()
+                        + ". Укажи точку 2 через /chess zone pos2 <pos> <имя>."), false);
+                    return 1;
+                })))
+                .then(literal("pos2").then(argument("pos", BlockPosArgumentType.blockPos())
+                    .then(argument("name", StringArgumentType.word()).executes(ctx ->
+                        defineZone(ctx.getSource(), BlockPosArgumentType.getBlockPos(ctx, "pos"),
+                            StringArgumentType.getString(ctx, "name"), ""))
+                    .then(argument("onEnter", StringArgumentType.greedyString()).executes(ctx ->
+                        defineZone(ctx.getSource(), BlockPosArgumentType.getBlockPos(ctx, "pos"),
+                            StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "onEnter"))))))))
             .then(literal("white").executes(ctx -> joinTeam(ctx.getSource(), "white")))
             .then(literal("black").executes(ctx -> joinTeam(ctx.getSource(), "black")))
             .then(literal("unselect").executes(ctx -> {
@@ -200,6 +227,38 @@ public final class ChessCommands {
             ServerPlayerEntity player = ctx.getSource().getPlayer();
             return ChessGameManager.checkBoard(ctx.getSource().getWorld(), player) ? 1 : 0;
         })));
+    }
+
+    private static int setTurnHud(ServerCommandSource source, int mode) {
+        ChessWorldConfig.get(source.getServer()).setTurnHudMode(mode);
+        String label = mode == 0 ? "выключен" : mode == 1 ? "временный" : "постоянный";
+        source.sendFeedback(() -> Text.literal("Индикатор хода: " + label + "."), false);
+        return 1;
+    }
+
+    private static int setZonesVisible(ServerCommandSource source, boolean visible) {
+        ChessWorldConfig.get(source.getServer()).setTriggerZonesVisible(visible);
+        source.sendFeedback(() -> Text.literal("Границы триггерных областей " + (visible ? "показаны" : "скрыты") + "."), false);
+        return 1;
+    }
+
+    private static int defineZone(ServerCommandSource source, BlockPos pos, String name, String requestedEnter) {
+        try {
+            ChessWorldConfig config = ChessWorldConfig.get(source.getServer());
+            String enter = requestedEnter == null ? "" : requestedEnter.trim();
+            if (enter.isBlank()) {
+                if ("team_white".equalsIgnoreCase(name) || "white".equalsIgnoreCase(name)) enter = "chess white";
+                else if ("team_black".equalsIgnoreCase(name) || "black".equalsIgnoreCase(name)) enter = "chess black";
+            }
+            config.defineZone(name, source.getWorld(), pos, enter, "");
+            final String finalEnter = enter;
+            source.sendFeedback(() -> Text.literal("Триггерная область «" + name + "» создана между точками 1 и 2. "
+                + (finalEnter.isBlank() ? "Команду при входе можно задать в конфигураторе зон." : "Команда при входе: " + finalEnter)), false);
+            return 1;
+        } catch (IllegalStateException ex) {
+            source.sendError(Text.literal(ex.getMessage()));
+            return 0;
+        }
     }
 
     private static int teleport(ServerCommandSource source, boolean white) throws com.mojang.brigadier.exceptions.CommandSyntaxException {

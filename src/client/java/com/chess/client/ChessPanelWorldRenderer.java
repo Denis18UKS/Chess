@@ -180,19 +180,19 @@ public final class ChessPanelWorldRenderer {
 
         // Inspired by the supplied wooden scoreboard: simple gold headings and clean text.
         // No repeated block-glyph bars and no per-line translucent rectangles.
-        drawCentered(renderer, buffers, matrix, "ШАХМАТЫ", 96, 12, 0xFFFFB52E);
-        drawCentered(renderer, buffers, matrix, "РЕЖИМ ПАРТИИ", 96, 31, 0xFFFFD16A);
+        // The matrix origin is the centre of the three-block-wide panel, not its top-left.
+        // All horizontal text coordinates are therefore relative to x=0.
+        drawCentered(renderer, buffers, matrix, "ШАХМАТЫ", 0, 12, 0xFFFFB52E);
+        drawCentered(renderer, buffers, matrix, "РЕЖИМ ПАРТИИ", 0, 31, 0xFFFFD16A);
         String[] modes = {"1v1", "2v2", "С БОТОМ"};
-        int[] centers = {32, 96, 160};
+        int[] centers = {-64, 0, 64};
         for (int i = 0; i < modes.length; i++) {
             boolean selected = i == modeIndex;
             String label = selected ? "[ " + modes[i] + " ]" : modes[i];
             drawCentered(renderer, buffers, matrix, label, centers[i], 52,
                 selected ? 0xFFFFB52E : 0xFFF4E7C6);
         }
-        drawCentered(renderer, buffers, matrix, "НАЧАТЬ ПАРТИЮ", 96, 81, 0xFFFFD16A);
-        drawCentered(renderer, buffers, matrix, "СТОРОНА — ЧЕРЕЗ ЗОНУ", 96, 101, 0xFFF4E7C6);
-        drawCentered(renderer, buffers, matrix, "3 • 2 • 1  →  ИГРА", 96, 118, 0xFFFFB52E);
+        drawCentered(renderer, buffers, matrix, "НАЧАТЬ ПАРТИЮ", 0, 82, 0xFFFFD16A);
         matrices.pop();
     }
 
