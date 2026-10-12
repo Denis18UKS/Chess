@@ -5,9 +5,7 @@
   "client": [
     "HideSurvivalHudMixin",
     "HideFoodIconsMixin",
-    "GameRendererFadeOverlayMixin",
-    "ScreenFadeOverlayMixin",
-    "InGameHudFadeOverlayMixin"
+    "GlobalFadeOverlayMixin"
   ],
   "injectors": {
     "defaultRequire": 1
