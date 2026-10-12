@@ -1824,6 +1824,24 @@ public final class ChessGameManager {
     private static void checkEndCondition(ServerWorld world, BoardState state) {
         if (!state.running) return;
         char[][] cells = readBoard(world);
+
+        // King vs. king is insufficient mating material. End the game immediately as a draw.
+        int whiteKings = 0;
+        int blackKings = 0;
+        int otherPieces = 0;
+        for (char[] row : cells) {
+            for (char piece : row) {
+                if (piece == 'K') whiteKings++;
+                else if (piece == 'k') blackKings++;
+                else if (piece != '.') otherPieces++;
+            }
+        }
+        if (whiteKings == 1 && blackKings == 1 && otherPieces == 0) {
+            finishMatch(world, "На доске остались только два короля. Ничья.");
+            playNeutralDrawSound(world, state);
+            ChessNetwork.broadcastClockState(world);
+            return;
+        }
         boolean whiteToMove = state.whiteTurn;
         boolean inCheck = ChessRules.isInCheck(cells, whiteToMove);
         boolean kingMoved = whiteToMove ? state.whiteKingMoved : state.blackKingMoved;
@@ -1875,6 +1893,21 @@ public final class ChessGameManager {
             player.sendMessage(Text.literal(message).formatted(
                 message.contains("МАТ") ? Formatting.DARK_RED : Formatting.RED, Formatting.BOLD), true);
             playSoundToPlayer(player, sound, 0.9f, message.contains("ШАХ") ? 1.1f : 1.0f);
+        }
+    }
+
+    /** A neutral draw cue is sent only to this match's participants and current spectators. */
+    private static void playNeutralDrawSound(ServerWorld world, BoardState state) {
+        Set<UUID> recipients = new HashSet<>(state.participants);
+        recipients.addAll(state.observers);
+        recipients.addAll(state.pendingWhiteParticipants);
+        recipients.addAll(state.pendingBlackParticipants);
+        for (UUID id : recipients) {
+            ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(id);
+            if (player != null) {
+                // Same restrained chime used for stalemate: no win/loss sting or team-specific cue.
+                playSoundToPlayer(player, SoundEvents.BLOCK_NOTE_BLOCK_CHIME.value(), 0.9f, 0.75f);
+            }
         }
     }
 
