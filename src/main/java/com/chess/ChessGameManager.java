@@ -137,6 +137,8 @@ public final class ChessGameManager {
         state.ruleMode = config.getRuleMode();
         state.matchDurationMinutes = config.getMatchDurationMinutes();
         if (state.matchEnded || boardIsEmpty(world, state)) resetBoard(world);
+        // A scoreboard team cannot outlive a match. Saved side selections remain in world config.
+        clearChessTeams(world.getServer());
 
         List<UUID> selectedWhite = new ArrayList<>();
         List<UUID> selectedBlack = new ArrayList<>();
@@ -415,7 +417,8 @@ public final class ChessGameManager {
             }
             if (state.observers.remove(player.getUuid())) {
                 ChessNetwork.sendSpectatorState(player, false, state.whiteTurn);
-                player.changeGameMode(GameMode.ADVENTURE);
+                GameMode oldMode = state.observerOriginalModes.remove(player.getUuid());
+                player.changeGameMode(oldMode == null ? GameMode.ADVENTURE : oldMode);
                 teleportPlayerToLobby(player);
                 player.sendMessage(Text.literal("Ты покинул наблюдение и вернулся в лобби."), false);
                 return true;
@@ -456,9 +459,12 @@ public final class ChessGameManager {
                 && state.pendingBlackParticipants.stream().allMatch(id -> server.getPlayerManager().getPlayer(id) != null);
             if (!rosterOnline) {
                 state.countdownActive = false;
+                state.countdownRemaining = 0;
+                state.countdownNextTick = -1L;
                 state.pendingWhiteParticipants.clear();
                 state.pendingBlackParticipants.clear();
                 state.observers.clear();
+                state.observerOriginalModes.clear();
                 showServerTitle(server, "Недостаточно игроков");
                 broadcast(world, "Недостаточно игроков. Запуск партии отменён.");
                 continue;
@@ -499,7 +505,7 @@ public final class ChessGameManager {
                 teleportToSpectator(observer, world, state);
             }
             if (!teleportTeamToConfiguredTarget(world, true)) teleportRosterToBoard(world, state, state.pendingWhiteParticipants, true);
-            if (state.matchMode == MatchMode.TWO_TWO && !teleportTeamToConfiguredTarget(world, false))
+            if (state.matchMode != MatchMode.ONE_VS_BOT && !teleportTeamToConfiguredTarget(world, false))
                 teleportRosterToBoard(world, state, state.pendingBlackParticipants, false);
 
             beginMatch(world);
@@ -567,33 +573,43 @@ public final class ChessGameManager {
 
         boolean anyActiveMatch = BOARDS.values().stream().anyMatch(s -> s.running);
         boolean anyCountdown = BOARDS.values().stream().anyMatch(s -> s.countdownActive);
-        if (!returningDuringGame || (!anyActiveMatch && !anyCountdown)) {
+        boolean activeParticipant = BOARDS.values().stream().anyMatch(s -> s.running && s.participants.contains(player.getUuid()));
+
+        // Only a reconnecting active participant can restore a match state. Spectators and
+        // late joiners go back to the lobby and must opt into observing again.
+        if (!activeParticipant || !returningDuringGame || (!anyActiveMatch && !anyCountdown)) {
+            for (BoardState state : BOARDS.values()) {
+                state.observers.remove(player.getUuid());
+                state.observerOriginalModes.remove(player.getUuid());
+            }
             clearChessTeam(server, player);
             if (!anyActiveMatch && !anyCountdown) config.clearSelectedTeam(player.getUuid());
+            player.changeGameMode(GameMode.ADVENTURE);
             teleportPlayerToLobby(player);
             if (anyActiveMatch) player.sendMessage(Text.literal("Партия уже идёт. Нажми O или используй /chess spectate, чтобы смотреть игру."), false);
-        } else {
-            for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
-                BoardState state = entry.getValue();
-                if (!state.pausedByDisconnect) continue;
-                boolean keyPlayerReturned = player.getUuid().equals(state.disconnectedPlayerId);
-                net.minecraft.scoreboard.AbstractTeam joiningTeam = player.getScoreboardTeam();
-                boolean teammateReturned = state.matchMode == MatchMode.TWO_TWO
-                    && state.participants.contains(player.getUuid())
-                    && joiningTeam != null && joiningTeam.getName().equals(state.disconnectedTeamName);
-                if (!keyPlayerReturned && !teammateReturned) continue;
-                state.paused = false;
-                state.pausedByDisconnect = false;
-                state.disconnectedPlayerId = null;
-                state.disconnectedTeamName = "";
-                ServerWorld boardWorld = server.getWorld(entry.getKey());
-                if (boardWorld != null) {
-                    broadcast(boardWorld, teammateReturned && !keyPlayerReturned
-                        ? "Игрок команды вернулся. Партия автоматически продолжена."
-                        : "Ключевой игрок вернулся. Партия автоматически продолжена.");
-                    updateTurnGlow(boardWorld, state);
-                    ChessNetwork.broadcastClockState(boardWorld);
-                }
+            return;
+        }
+
+        for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
+            BoardState state = entry.getValue();
+            if (!state.pausedByDisconnect) continue;
+            boolean keyPlayerReturned = player.getUuid().equals(state.disconnectedPlayerId);
+            String teamName = state.lastParticipantTeams.get(player.getUuid());
+            boolean teammateReturned = state.matchMode == MatchMode.TWO_TWO
+                && state.participants.contains(player.getUuid())
+                && teamName != null && teamName.equals(state.disconnectedTeamName);
+            if (!keyPlayerReturned && !teammateReturned) continue;
+            state.paused = false;
+            state.pausedByDisconnect = false;
+            state.disconnectedPlayerId = null;
+            state.disconnectedTeamName = "";
+            ServerWorld boardWorld = server.getWorld(entry.getKey());
+            if (boardWorld != null) {
+                broadcast(boardWorld, teammateReturned && !keyPlayerReturned
+                    ? "Игрок команды вернулся. Партия автоматически продолжена."
+                    : "Ключевой игрок вернулся. Партия автоматически продолжена.");
+                updateTurnGlow(boardWorld, state);
+                ChessNetwork.broadcastClockState(world);
             }
         }
     }
@@ -601,13 +617,21 @@ public final class ChessGameManager {
     public static void handlePlayerDisconnect(ServerPlayerEntity player) {
         MinecraftServer server = player.getServer();
         if (server == null) return;
-        boolean someMatchActive = BOARDS.values().stream().anyMatch(state -> state.running);
-        if (someMatchActive) {
+
+        boolean isActiveParticipant = BOARDS.values().stream()
+            .anyMatch(state -> state.running && state.participants.contains(player.getUuid()));
+        if (isActiveParticipant) {
             DISCONNECTED_DURING_ACTIVE_MATCH.add(player.getUuid());
         } else {
+            DISCONNECTED_DURING_ACTIVE_MATCH.remove(player.getUuid());
             ChessWorldConfig.get(server).clearSelectedTeam(player.getUuid());
             clearChessTeam(server, player);
+            for (BoardState state : BOARDS.values()) {
+                state.observers.remove(player.getUuid());
+                state.observerOriginalModes.remove(player.getUuid());
+            }
         }
+
         for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
             BoardState state = entry.getValue();
             ServerWorld world = server.getWorld(entry.getKey());
@@ -616,24 +640,23 @@ public final class ChessGameManager {
             String teamName = state.lastParticipantTeams.get(player.getUuid());
             if (!"white".equals(teamName) && !"black".equals(teamName)) continue;
 
-            boolean shouldPause = false;
+            boolean shouldPause;
             if (state.matchMode == MatchMode.ONE_ONE) {
                 shouldPause = true;
             } else if (state.matchMode == MatchMode.ONE_VS_BOT) {
                 shouldPause = "white".equals(teamName);
-            } else if (state.matchMode == MatchMode.TWO_TWO) {
-                boolean anyTeamMateOnline = server.getPlayerManager().getPlayerList().stream()
-                    .anyMatch(other -> !other.getUuid().equals(player.getUuid())
+            } else {
+                shouldPause = server.getPlayerManager().getPlayerList().stream()
+                    .noneMatch(other -> !other.getUuid().equals(player.getUuid())
                         && state.participants.contains(other.getUuid())
                         && teamName.equals(state.lastParticipantTeams.get(other.getUuid())));
-                shouldPause = !anyTeamMateOnline;
             }
             if (!shouldPause) continue;
             state.paused = true;
             state.pausedByDisconnect = true;
             state.disconnectedPlayerId = player.getUuid();
             state.disconnectedTeamName = teamName;
-            broadcast(world, "Пауза: игрок команды " + (teamName.equals("white") ? "Белые" : "Чёрные")
+            broadcast(world, "Пауза: игрок команды " + ("white".equals(teamName) ? "Белые" : "Чёрные")
                 + " отключился. Игра продолжится автоматически после его возвращения.");
             updateTurnGlow(world, state);
             ChessNetwork.broadcastClockState(world);
@@ -727,8 +750,10 @@ public final class ChessGameManager {
         spreadTaggedPlayers(server, destination, lobby.pos, tag, Math.max(8, players.size() * 3));
         players.forEach(p -> {
             p.getCommandTags().remove(tag);
-            p.changeGameMode(GameMode.ADVENTURE);
-            ChessNetwork.sendSpectatorState(p, false, board(sourceWorld).whiteTurn);
+            BoardState state = board(sourceWorld);
+            GameMode oldMode = state.observerOriginalModes.remove(p.getUuid());
+            p.changeGameMode(oldMode == null ? GameMode.ADVENTURE : oldMode);
+            ChessNetwork.sendSpectatorState(p, false, state.whiteTurn);
         });
     }
 
