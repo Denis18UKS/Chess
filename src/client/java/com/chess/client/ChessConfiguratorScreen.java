@@ -70,8 +70,18 @@ public final class ChessConfiguratorScreen extends Screen {
         addDrawableChild(ButtonWidget.builder(Text.literal("Создать зону B"), b -> send("zone_define",
             zoneNameField.getText(), enterField.getText(), leaveField.getText(), 0, 0, 0))
             .dimensions(x, 332, w, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Наблюдение здесь"), b -> send("set_spectator", "", "", "", 0, 0, 0))
+            .dimensions(x, 356, half, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Угол A белых"), b -> send("zone_white_corner_a", "", "", "", 0, 0, 0))
+            .dimensions(x + half + 4, 356, half, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Создать зону белых"), b -> send("zone_white_define", "", "", "", 0, 0, 0))
+            .dimensions(x, 379, half, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Угол A чёрных"), b -> send("zone_black_corner_a", "", "", "", 0, 0, 0))
+            .dimensions(x + half + 4, 379, half, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Создать зону чёрных"), b -> send("zone_black_define", "", "", "", 0, 0, 0))
+            .dimensions(x, 402, half, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Закрыть"), b -> close())
-            .dimensions(x + w / 2 - 50, 356, 100, 20).build());
+            .dimensions(x + half + 4, 402, half, 20).build());
     }
 
     private void send(String action, String a, String b, String c, int v1, int v2, int v3) {
