@@ -136,7 +136,6 @@ public final class ChessGameManager {
         state.matchMode = config.getMatchMode();
         state.ruleMode = config.getRuleMode();
         state.matchDurationMinutes = config.getMatchDurationMinutes();
-        if (state.matchEnded || boardIsEmpty(world, state)) resetBoard(world);
         // A scoreboard team cannot outlive a match. Saved side selections remain in world config.
         clearChessTeams(world.getServer());
 
@@ -160,6 +159,8 @@ public final class ChessGameManager {
             broadcast(world, reason);
             throw new IllegalStateException(reason);
         }
+
+        if (state.matchEnded || boardIsEmpty(world, state)) resetBoard(world);
 
         state.pendingWhiteParticipants.clear();
         state.pendingWhiteParticipants.addAll(selectedWhite);
@@ -793,7 +794,10 @@ public final class ChessGameManager {
         ChessWorldConfig.SavedPos configuredLobby = ChessWorldConfig.get(server).getLocation("lobby");
         ServerWorld destination = configuredLobby == null ? server.getOverworld()
             : resolveWorld(server, configuredLobby.dimension);
-        if (destination == null) destination = server.getOverworld();
+        if (destination == null) {
+            configuredLobby = null;
+            destination = server.getOverworld();
+        }
         BlockPos lobby = configuredLobby == null ? destination.getSpawnPos() : configuredLobby.pos;
         Set<UUID> moving = Set.of(player.getUuid());
         BlockPos feet = findSafeFeetPosition(destination, lobby, new HashSet<>(), moving);
@@ -873,8 +877,9 @@ public final class ChessGameManager {
         ChessWorldConfig.SavedPos configuredLobby = ChessWorldConfig.get(server).getLocation("lobby");
         ServerWorld destination = configuredLobby == null ? server.getOverworld()
             : resolveWorld(server, configuredLobby.dimension);
+        if (destination == null) configuredLobby = null;
+        if (destination == null) destination = server.getOverworld();
         BlockPos lobby = configuredLobby == null ? destination.getSpawnPos() : configuredLobby.pos;
-        if (destination == null) return;
 
         // Include all online participants even if team destinations moved them to another dimension.
         Set<UUID> returnIds = new HashSet<>(board(sourceWorld).participants);
