@@ -28,7 +28,6 @@ import java.util.Set;
 /** Renders and handles clickable controls on the actual 3x3 panel blocks in the world. */
 public final class ChessPanelWorldRenderer {
     private static int modeIndex;
-    private static boolean panelStateRequested;
     private static long lastScanTick = Long.MIN_VALUE;
     private static World cachedWorld;
     private static final Set<BlockPos> cachedAnchors = new HashSet<>();
@@ -46,7 +45,6 @@ public final class ChessPanelWorldRenderer {
     }
 
     public static void requestPanelState() {
-        panelStateRequested = false;
         requestCurrentMode();
     }
 
@@ -59,7 +57,6 @@ public final class ChessPanelWorldRenderer {
         buf.writeString("", 1024); buf.writeString("", 1024); buf.writeString("", 1024);
         buf.writeInt(0); buf.writeInt(0); buf.writeInt(0);
         ClientPlayNetworking.send(ChessNetwork.ADMIN_ACTION, buf);
-        panelStateRequested = true;
     }
 
     public static boolean handleClick(World world, BlockHitResult hit) {

@@ -23,5 +23,7 @@
   "key.chess.ladya_right": "Rook: right",
   "category.chess": "Chess",
   "item.chess.chess_asset_studio_tool": "Model & Texture Studio",
+  "item.chess.chess_fade_tool": "Fade & Teleport Configurator",
+  "key.chess.spectate": "Watch chess match",
   "key.chess.switch_team": "Switch team (DEV)"
 }
