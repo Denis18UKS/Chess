@@ -119,3 +119,8 @@ The build generates the inventory icon PNGs, then creates the remapped mod JAR u
 ## License
 
 The repository's original license is CC0-1.0.
+
+
+## Human vs bot
+
+In `vs_bot` mode, choose either side with `/chess white` or `/chess black` before starting. Exactly one human must select a side; the bot automatically takes the opposite color. The choice can be changed before the match by running the other side-selection command. The bot evaluates its move plus the strongest legal reply, including material balance, exposed pieces, checks, centre control and pawn advancement, rather than preferring every capture by default. White knights are normalized to face the black side; black knights face white.

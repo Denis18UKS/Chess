@@ -147,13 +147,16 @@ public final class ChessGameManager {
             else if ("black".equals(selected)) selectedBlack.add(player.getUuid());
         }
 
-        int requiredWhite = state.matchMode == MatchMode.TWO_TWO ? 2 : 1;
-        int requiredBlack = state.matchMode == MatchMode.TWO_TWO ? 2 : state.matchMode == MatchMode.ONE_VS_BOT ? 0 : 1;
-        if (selectedWhite.size() != requiredWhite || selectedBlack.size() != requiredBlack) {
+        boolean validRoster = state.matchMode == MatchMode.ONE_VS_BOT
+            ? selectedWhite.size() + selectedBlack.size() == 1
+            : selectedWhite.size() == (state.matchMode == MatchMode.TWO_TWO ? 2 : 1)
+                && selectedBlack.size() == (state.matchMode == MatchMode.TWO_TWO ? 2 : 1);
+        if (!validRoster) {
             String reason = "Недостаточно игроков. Для режима "
                 + (state.matchMode == MatchMode.TWO_TWO ? "2v2 нужны 2 белых и 2 чёрных."
-                    : state.matchMode == MatchMode.ONE_VS_BOT ? "vs_bot нужен 1 игрок, выбравший белых."
-                    : "1v1 нужны 1 белый и 1 чёрный.")
+                    : state.matchMode == MatchMode.ONE_VS_BOT
+                        ? "vs_bot нужен ровно 1 игрок. Выбери белых ИЛИ чёрных; бот автоматически займёт противоположную сторону."
+                        : "1v1 нужны 1 белый и 1 чёрный.")
                 + " Выбери сторону через /chess white или /chess black.";
             showServerTitle(world.getServer(), "Недостаточно игроков", Formatting.RED);
             // The caller reports the single detailed error. Do not also broadcast it to chat.
@@ -161,6 +164,7 @@ public final class ChessGameManager {
         }
 
         if (state.matchEnded || boardIsEmpty(world, state)) resetBoard(world);
+        state.botWhite = state.matchMode == MatchMode.ONE_VS_BOT && selectedWhite.isEmpty();
 
         state.observerOriginalModes.clear();
         for (UUID id : selectedWhite) {
@@ -209,10 +213,12 @@ public final class ChessGameManager {
         state.whiteTurn = true;
         state.pending = null;
         state.promotionPending = false;
-        state.botMoveAtTick = state.matchMode == MatchMode.ONE_VS_BOT ? serverTick(world.getServer()) + 20L : -1L;
+        state.botMoveAtTick = state.matchMode == MatchMode.ONE_VS_BOT && state.botWhite
+            ? serverTick(world.getServer()) + 20L : -1L;
         state.matchDeadlineAtTick = state.matchDurationMinutes > 0
             ? serverTick(world.getServer()) + state.matchDurationMinutes * 1200L : -1L;
         state.whiteClockTicks = state.blackClockTicks = state.clockMaxTicks();
+        ensureKnightFacing(world, state);
         state.participants.clear();
         state.lastParticipantTeams.clear();
         for (ServerPlayerEntity player : world.getServer().getPlayerManager().getPlayerList()) {
@@ -224,7 +230,8 @@ public final class ChessGameManager {
         }
         autoConfigureCaptures(world, state);
         broadcast(world, state.matchMode == MatchMode.ONE_VS_BOT
-            ? "Шахматная партия началась: ты играешь против бота."
+            ? "Шахматная партия началась: ты играешь за " + (state.botWhite ? "чёрных" : "белых")
+                + ", бот играет за " + (state.botWhite ? "белых" : "чёрных") + "."
             : "Шахматная партия началась.");
         broadcast(world, state.threeDimensional
             ? "Управление 3D: ПКМ по своей фигуре, затем ПКМ по клетке назначения."
@@ -382,7 +389,8 @@ public final class ChessGameManager {
                             .filter(choice -> side.equals(choice.getValue()))
                             .map(Map.Entry::getKey)
                             .sorted(java.util.Comparator.comparing(java.util.UUID::toString)).toList();
-                        int allowed = mode == MatchMode.ONE_VS_BOT && "black".equals(side) ? 0 : sideLimit;
+                        // vs_bot accepts either color; the computer takes the opposite one at match start.
+                        int allowed = sideLimit;
                         for (int i = allowed; i < owners.size(); i++) config.clearSelectedTeam(owners.get(i));
                     }
                     ChessNetwork.broadcastPanelMode(player.getServer(), mode);
@@ -504,10 +512,7 @@ public final class ChessGameManager {
         }
         ChessWorldConfig config = ChessWorldConfig.get(server);
         ChessGameManager.MatchMode mode = config.getMatchMode();
-        if (mode == MatchMode.ONE_VS_BOT && "black".equals(teamName)) {
-            player.sendMessage(Text.literal("В режиме vs_bot чёрными играет бот. Выбери сторону «Белые».").formatted(Formatting.WHITE), false);
-            return false;
-        }
+        // In vs_bot, either side is a valid human choice. The bot takes the opposite color.
         int limit = mode == MatchMode.TWO_TWO ? 2 : 1;
         long occupied = config.getSelectedTeams().entrySet().stream()
             .filter(entry -> teamName.equals(entry.getValue()) && !entry.getKey().equals(player.getUuid()))
@@ -522,7 +527,8 @@ public final class ChessGameManager {
         Formatting color = teamName.equals("white") ? Formatting.WHITE : Formatting.DARK_GRAY;
         player.sendMessage(Text.literal("Предварительно выбрана сторона: "
             + (teamName.equals("white") ? "Белые" : "Чёрные")
-            + ". До начала партии ты не состоишь в Minecraft-команде.").formatted(color), false);
+            + ". До начала партии ты не состоишь в Minecraft-команде."
+            + (mode == MatchMode.ONE_VS_BOT ? " Бот автоматически займёт противоположную сторону." : "")).formatted(color), false);
         return true;
     }
 
@@ -664,8 +670,11 @@ public final class ChessGameManager {
                 observer.changeGameMode(GameMode.SPECTATOR);
                 teleportToSpectator(observer, world, state);
             }
-            if (!teleportTeamToConfiguredTarget(world, true)) teleportRosterToBoard(world, state, state.pendingWhiteParticipants, true);
-            if (state.matchMode != MatchMode.ONE_VS_BOT && !teleportTeamToConfiguredTarget(world, false))
+            if (!state.pendingWhiteParticipants.isEmpty()
+                && !teleportTeamToConfiguredTarget(world, true))
+                teleportRosterToBoard(world, state, state.pendingWhiteParticipants, true);
+            if (!state.pendingBlackParticipants.isEmpty()
+                && !teleportTeamToConfiguredTarget(world, false))
                 teleportRosterToBoard(world, state, state.pendingBlackParticipants, false);
 
             beginMatch(world);
@@ -818,7 +827,8 @@ public final class ChessGameManager {
             if (!"white".equals(teamName) && !"black".equals(teamName)) continue;
             boolean shouldPause;
             if (state.matchMode == MatchMode.ONE_ONE) shouldPause = true;
-            else if (state.matchMode == MatchMode.ONE_VS_BOT) shouldPause = "white".equals(teamName);
+            else if (state.matchMode == MatchMode.ONE_VS_BOT)
+                shouldPause = (state.botWhite ? "black" : "white").equals(teamName);
             else shouldPause = server.getPlayerManager().getPlayerList().stream()
                 .noneMatch(other -> !other.getUuid().equals(player.getUuid())
                     && state.participants.contains(other.getUuid())
@@ -995,7 +1005,8 @@ public final class ChessGameManager {
         for (ServerPlayerEntity player : world.getPlayers()) {
             net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
             boolean chessTeam = team != null && (team.getName().equals("white") || team.getName().equals("black"));
-            boolean botSide = state.matchMode == MatchMode.ONE_VS_BOT && team != null && team.getName().equals("black");
+            boolean botSide = state.matchMode == MatchMode.ONE_VS_BOT && team != null
+                && team.getName().equals(state.botWhite ? "white" : "black");
             boolean isTurnTeam = chessTeam && !botSide && state.running && !state.paused
                 && state.whiteTurn == team.getName().equals("white");
             if (isTurnTeam) {
@@ -1123,6 +1134,7 @@ public final class ChessGameManager {
         state.promotionPlayerId = null;
         state.promotionRow = state.promotionCol = -1;
         state.whiteTurn = true;
+        state.botWhite = false;
         state.paused = false;
         state.pausedByDisconnect = false;
         state.disconnectedPlayerId = null;
@@ -1167,7 +1179,7 @@ public final class ChessGameManager {
                     ChessPieceType type = ChessPieceType.fromSymbol(symbol);
                     world.setBlockState(pos, type.block().getDefaultState(), 3);
                     if (world.getBlockEntity(pos) instanceof ChessFigureBlockEntity figure) {
-                        figure.setYawDegrees(0.0f);
+                        figure.setYawDegrees(type == ChessPieceType.WHITE_KNIGHT ? 180.0f : 0.0f);
                         figure.setTintRgb(0xFFFFFF);
                     }
                 }
@@ -1312,6 +1324,19 @@ public final class ChessGameManager {
         return true;
     }
 
+    /** White knights face toward row 0 (the black side); black knights face toward row 7. */
+    private static void ensureKnightFacing(ServerWorld world, BoardState state) {
+        if (!state.configured) return;
+        char[][] cells = readBoard(world);
+        for (int row = 0; row < 8; row++) for (int col = 0; col < 8; col++) {
+            char piece = cells[row][col];
+            if (piece != 'N' && piece != 'n') continue;
+            BlockPos pos = piecePos(state, row, col);
+            if (world.getBlockEntity(pos) instanceof ChessFigureBlockEntity figure)
+                figure.setYawDegrees(piece == 'N' ? 180.0f : 0.0f);
+        }
+    }
+
     public static void autoConfigureCaptures(ServerWorld world) {
         autoConfigureCaptures(world, board(world));
         broadcast(world, "Поле срубленных фигур настроено автоматически.");
@@ -1403,7 +1428,11 @@ public final class ChessGameManager {
         ChessPieceType pawn = ChessPieceType.fromSymbol(pawnSymbol);
         if (promoted == null || pawn == null) return;
         world.setBlockState(pos, promoted.block().getDefaultState(), 3);
-        if (world.getBlockEntity(pos) instanceof ChessFigureBlockEntity entity) entity.setYawDegrees(yaw);
+        if (world.getBlockEntity(pos) instanceof ChessFigureBlockEntity entity) {
+            if (promoted == ChessPieceType.WHITE_KNIGHT) entity.setYawDegrees(180.0f);
+            else if (promoted == ChessPieceType.BLACK_KNIGHT) entity.setYawDegrees(0.0f);
+            else entity.setYawDegrees(yaw);
+        }
         // The captured piece is consumed by the promotion; replace its tray slot with the promoting pawn.
         captured.set(capturedIndex, pawnSymbol);
         BlockPos tray = state.promotionWhite ? state.whiteCaptureOrigin : state.blackCaptureOrigin;
@@ -1411,6 +1440,10 @@ public final class ChessGameManager {
         state.promotionPending = false;
         state.promotionPlayerId = null;
         state.whiteTurn = !state.whiteTurn;
+        if (state.matchMode == MatchMode.ONE_VS_BOT && state.whiteTurn == state.botWhite)
+            state.botMoveAtTick = serverTick(world.getServer()) + 20L;
+        else
+            state.botMoveAtTick = -1L;
         updateTeamHighlights(world.getServer(), state);
         updateTurnGlow(world, state);
         announceTurn(world, state);
@@ -1431,8 +1464,8 @@ public final class ChessGameManager {
         char piece = cells[row][col];
         ChessPieceType type = ChessPieceType.fromSymbol(piece);
         if (type == null) return;
-        if (state.matchMode == MatchMode.ONE_VS_BOT && !type.isWhite()) {
-            tell(player, "В режиме 1_vs_bot чёрными управляет компьютер.");
+        if (state.matchMode == MatchMode.ONE_VS_BOT && type.isWhite() == state.botWhite) {
+            tell(player, "Этими фигурами управляет бот; выбери свою сторону.");
             return;
         }
         if (type.isWhite() != state.whiteTurn) {
@@ -1497,7 +1530,7 @@ public final class ChessGameManager {
                 .filter(choice -> side.equals(choice.getValue()))
                 .map(Map.Entry::getKey)
                 .sorted(java.util.Comparator.comparing(UUID::toString)).toList();
-            int allowed = mode == MatchMode.ONE_VS_BOT && "black".equals(side) ? 0 : limit;
+            int allowed = limit;
             for (int i = allowed; i < selectedPlayers.size(); i++) config.clearSelectedTeam(selectedPlayers.get(i));
         }
         String label = mode == MatchMode.ONE_ONE ? "1v1" : mode == MatchMode.TWO_TWO ? "2v2" : "vs_bot";
@@ -1523,7 +1556,7 @@ public final class ChessGameManager {
         state.whiteTurn = !state.whiteTurn;
         updateTeamHighlights(world.getServer(), state);
         updateTurnGlow(world, state);
-        if (state.matchMode == MatchMode.ONE_VS_BOT && !state.whiteTurn)
+        if (state.matchMode == MatchMode.ONE_VS_BOT && state.whiteTurn == state.botWhite)
             state.botMoveAtTick = serverTick(world.getServer()) + 20L;
         announceTurn(world, state);
         ChessNetwork.broadcastSpectatorState(world, state);
@@ -1577,8 +1610,8 @@ public final class ChessGameManager {
         char moving = cells[fr][fc], target = cells[tr][tc];
         ChessPieceType type = ChessPieceType.fromSymbol(moving);
         if (type == null) { tell(player, "На выбранной клетке нет фигуры."); return; }
-        if (state.matchMode == MatchMode.ONE_VS_BOT && !type.isWhite()) {
-            tell(player, "В режиме 1_vs_bot чёрными управляет компьютер."); return;
+        if (state.matchMode == MatchMode.ONE_VS_BOT && type.isWhite() == state.botWhite) {
+            tell(player, "Этими фигурами управляет бот; выбери свою сторону."); return;
         }
         if (target != '.' && Character.toUpperCase(target) == 'K') {
             tell(player, "Король не снимается: партия должна завершиться матом."); return;
@@ -1639,8 +1672,10 @@ public final class ChessGameManager {
         BlockPos rookTo = castle ? piecePos(state, fr, tc > fc ? 5 : 3) : null;
         BlockState rookState = castle ? world.getBlockState(rookFrom) : Blocks.AIR.getDefaultState();
 
-        float movingYaw = world.getBlockEntity(from) instanceof ChessFigureBlockEntity movingEntity
-            ? movingEntity.getYawDegrees() : 0.0f;
+        float movingYaw = type == ChessPieceType.WHITE_KNIGHT ? 180.0f
+            : type == ChessPieceType.BLACK_KNIGHT ? 0.0f
+            : world.getBlockEntity(from) instanceof ChessFigureBlockEntity movingEntity
+                ? movingEntity.getYawDegrees() : 0.0f;
         float rookYaw = castle && world.getBlockEntity(rookFrom) instanceof ChessFigureBlockEntity rookEntity
             ? rookEntity.getYawDegrees() : 0.0f;
         int animationTicks = Math.max(6, Math.min(12, Math.max(Math.abs(tr - fr), Math.abs(tc - fc)) * 2
@@ -1743,7 +1778,7 @@ public final class ChessGameManager {
                 ChessNetwork.broadcastClockState(world);
             }
 
-            if (state.running && state.matchMode == MatchMode.ONE_VS_BOT && !state.whiteTurn
+            if (state.running && state.matchMode == MatchMode.ONE_VS_BOT && state.whiteTurn == state.botWhite
                 && !state.paused && state.pending == null && !state.promotionPending) {
                 queueBotMove(world, state, tick);
             }
@@ -1781,10 +1816,10 @@ public final class ChessGameManager {
 
             String options = needsPromotion ? promotionOptions(state, move.type.isWhite()) : "";
             if (needsPromotion && !options.isEmpty()
-                && state.matchMode == MatchMode.ONE_VS_BOT && !move.type.isWhite()
+                && state.matchMode == MatchMode.ONE_VS_BOT && move.type.isWhite() == state.botWhite
                 && BOT_PLAYER_ID.equals(move.playerId)) {
-                promoteBotPawn(world, state, options.charAt(0), move.tr, move.tc);
-                state.whiteTurn = true;
+                promoteBotPawn(world, state, options.charAt(0), move.tr, move.tc, state.botWhite);
+                state.whiteTurn = !state.botWhite;
                 updateTeamHighlights(server, state);
                 updateTurnGlow(world, state);
                 announceTurn(world, state);
@@ -1801,7 +1836,7 @@ public final class ChessGameManager {
                 if (needsPromotion) tellPlayerByUuid(world, move.playerId,
                     "Нет доступной срубленной фигуры для превращения: пешка остаётся пешкой.");
                 state.whiteTurn = !state.whiteTurn;
-                if (state.matchMode == MatchMode.ONE_VS_BOT && !state.whiteTurn)
+                if (state.matchMode == MatchMode.ONE_VS_BOT && state.whiteTurn == state.botWhite)
                     state.botMoveAtTick = tick + 20L;
                 else
                     state.botMoveAtTick = -1L;
@@ -1821,45 +1856,123 @@ public final class ChessGameManager {
     private static void queueBotMove(ServerWorld world, BoardState state, long tick) {
         if (state.botMoveAtTick < 0L) state.botMoveAtTick = tick + 10L;
         if (tick < state.botMoveAtTick) return;
-        char[][] cells = readBoard(world);
-        List<int[]> bestMoves = new ArrayList<>();
-        int bestScore = Integer.MIN_VALUE;
-        for (int fr = 0; fr < 8; fr++) for (int fc = 0; fc < 8; fc++) {
-            char piece = cells[fr][fc];
-            if (piece == '.' || Character.isUpperCase(piece)) continue;
-            ChessPieceType type = ChessPieceType.fromSymbol(piece);
-            if (type == null) continue;
-            for (int tr = 0; tr < 8; tr++) for (int tc = 0; tc < 8; tc++) {
-                char target = cells[tr][tc];
-                if (target != '.' && Character.toUpperCase(target) == 'K') continue;
-                if (!ChessRules.isLegalMove(cells, fr, fc, tr, tc, true,
-                    state.enPassantRow, state.enPassantCol, state.blackKingMoved,
-                    state.blackLeftRookMoved, state.blackRightRookMoved)) continue;
-                int score = target == '.' ? 0 : pieceValue(target) * 10;
-                char[][] next = ChessRules.copy(cells);
-                next[tr][tc] = piece;
-                next[fr][fc] = '.';
-                if (Character.toUpperCase(piece) == 'P' && fc != tc && target == '.') next[fr][tc] = '.';
-                if (ChessRules.isInCheck(next, true)) score += 7;
-                if (Character.toUpperCase(piece) == 'P' && tr == 7) score += 12;
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestMoves.clear();
-                    bestMoves.add(new int[]{fr, fc, tr, tc});
-                } else if (score == bestScore) {
-                    bestMoves.add(new int[]{fr, fc, tr, tc});
-                }
-            }
-        }
-        if (bestMoves.isEmpty()) {
+
+        boolean botWhite = state.botWhite;
+        BotPosition root = new BotPosition(readBoard(world), state);
+        List<int[]> legalMoves = legalBotMoves(root, botWhite);
+        if (legalMoves.isEmpty()) {
             state.botMoveAtTick = -1L;
             checkEndCondition(world, state);
             return;
         }
-        int[] move = bestMoves.get(world.getRandom().nextInt(bestMoves.size()));
+
+        String promotionOptions = promotionOptions(state, botWhite);
+        char promotionKind = promotionOptions.isEmpty() ? 0 : promotionOptions.charAt(0);
+        String opponentPromotionOptions = promotionOptions(state, !botWhite);
+        char opponentPromotionKind = opponentPromotionOptions.isEmpty() ? 0 : opponentPromotionOptions.charAt(0);
+
+        // One full reply ply: the bot values each candidate by the opponent's best legal reply,
+        // rather than awarding a huge fixed bonus for any capture. This filters obvious hanging pieces.
+        List<BotMoveChoice> scored = new ArrayList<>();
+        int bestScore = Integer.MIN_VALUE;
+        for (int[] move : legalMoves) {
+            BotPosition afterBot = root.after(move, promotionKind);
+            List<int[]> replies = legalBotMoves(afterBot, !botWhite);
+            int score;
+            if (replies.isEmpty()) {
+                // Checkmate is a win; stalemate is a draw, even if the bot is materially ahead.
+                score = ChessRules.isInCheck(afterBot.cells, !botWhite)
+                    ? BOT_MATE_SCORE : 0;
+            } else {
+                int worstReply = Integer.MAX_VALUE;
+                for (int[] reply : replies) {
+                    BotPosition afterReply = afterBot.after(reply, opponentPromotionKind);
+                    int replyScore = evaluateBotPosition(afterReply, botWhite);
+                    if (ChessRules.isInCheck(afterReply.cells, botWhite)) {
+                        List<int[]> botContinuation = legalBotMoves(afterReply, botWhite);
+                        if (botContinuation.isEmpty()) replyScore = -BOT_MATE_SCORE;
+                        else replyScore -= 70;
+                    }
+                    if (replyScore < worstReply) worstReply = replyScore;
+                }
+                score = worstReply;
+            }
+            // Small preference for checks and advancing a pawn; it is intentionally far
+            // smaller than piece values, so it cannot outweigh a clear material loss.
+            if (ChessRules.isInCheck(afterBot.cells, !botWhite)) score += 18;
+            char moving = root.cells[move[0]][move[1]];
+            if (Character.toUpperCase(moving) == 'P')
+                score += (botWhite ? 6 - move[2] : move[2] - 1) * 2;
+            scored.add(new BotMoveChoice(move, score));
+            if (score > bestScore) bestScore = score;
+        }
+
+        final int cutoff = bestScore - 4;
+        List<int[]> nearBest = new ArrayList<>();
+        for (BotMoveChoice choice : scored) if (choice.score >= cutoff) nearBest.add(choice.move);
+        int[] move = nearBest.get(world.getRandom().nextInt(nearBest.size()));
         state.botMoveAtTick = -1L;
         broadcast(world, "Ход бота.");
         scheduleMove(world, state, move[0], move[1], move[2], move[3], BOT_PLAYER_ID, null);
+    }
+
+    private static final int BOT_MATE_SCORE = 100_000;
+
+    private static List<int[]> legalBotMoves(BotPosition position, boolean white) {
+        List<int[]> moves = new ArrayList<>();
+        for (int fr = 0; fr < 8; fr++) for (int fc = 0; fc < 8; fc++) {
+            char piece = position.cells[fr][fc];
+            if (piece == '.' || ChessRules.isWhite(piece) != white) continue;
+            for (int tr = 0; tr < 8; tr++) for (int tc = 0; tc < 8; tc++) {
+                char target = position.cells[tr][tc];
+                if (target != '.' && Character.toUpperCase(target) == 'K') continue;
+                if (ChessRules.isLegalMove(position.cells, fr, fc, tr, tc, true,
+                    position.enPassantRow, position.enPassantCol,
+                    white ? position.whiteKingMoved : position.blackKingMoved,
+                    white ? position.whiteLeftRookMoved : position.blackLeftRookMoved,
+                    white ? position.whiteRightRookMoved : position.blackRightRookMoved)) {
+                    moves.add(new int[]{fr, fc, tr, tc});
+                }
+            }
+        }
+        return moves;
+    }
+
+    /** Static material, centre control and hanging-piece evaluation from the bot's point of view. */
+    private static int evaluateBotPosition(BotPosition position, boolean botWhite) {
+        char[][] cells = position.cells;
+        int score = 0;
+        for (int row = 0; row < 8; row++) for (int col = 0; col < 8; col++) {
+            char piece = cells[row][col];
+            if (piece == '.') continue;
+            boolean white = ChessRules.isWhite(piece);
+            int sign = white == botWhite ? 1 : -1;
+            int kind = Character.toUpperCase(piece);
+            int value = pieceValue(piece) * 100;
+            score += sign * value;
+
+            if (kind == 'P') {
+                int progress = white ? 6 - row : row - 1;
+                score += sign * Math.max(0, progress) * 5;
+            } else if (kind != 'K') {
+                int centre = 7 - Math.abs(2 * row - 7) - Math.abs(2 * col - 7);
+                if (kind == 'N' || kind == 'B') score += sign * centre * 5;
+                else if (kind == 'Q') score += sign * centre * 2;
+            }
+
+            // Penalize hanging material. A defended piece is still at risk, but less so;
+            // unlike the old bot this means a capture that simply loses the capturer is not free.
+            if (ChessRules.isAttacked(cells, row, col, !white)) {
+                char[][] withoutTarget = ChessRules.copy(cells);
+                withoutTarget[row][col] = '.';
+                boolean defended = ChessRules.isAttacked(withoutTarget, row, col, white);
+                int loss = Math.max(8, value * (defended ? 10 : 36) / 100);
+                score -= sign * loss;
+            }
+        }
+        if (ChessRules.isInCheck(cells, botWhite)) score -= 65;
+        if (ChessRules.isInCheck(cells, !botWhite)) score += 65;
+        return score;
     }
 
     private static int pieceValue(char piece) {
@@ -1873,13 +1986,15 @@ public final class ChessGameManager {
         }
     }
 
-    private static void promoteBotPawn(ServerWorld world, BoardState state, char option, int row, int col) {
+    private static void promoteBotPawn(ServerWorld world, BoardState state, char option, int row, int col,
+                                       boolean white) {
         char kind = Character.toUpperCase(option);
-        List<Character> captured = state.blackCapturedPieces;
+        List<Character> captured = white ? state.whiteCapturedPieces : state.blackCapturedPieces;
         int capturedIndex = -1;
         for (int i = 0; i < captured.size(); i++) {
             ChessPieceType candidate = ChessPieceType.fromSymbol(captured.get(i));
-            if (candidate != null && candidate.isWhite() && Character.toUpperCase(captured.get(i)) == kind) {
+            if (candidate != null && candidate.isWhite() != white
+                && Character.toUpperCase(captured.get(i)) == kind) {
                 capturedIndex = i;
                 break;
             }
@@ -1887,12 +2002,92 @@ public final class ChessGameManager {
         if (capturedIndex < 0) return;
         BlockPos pos = piecePos(state, row, col);
         float yaw = world.getBlockEntity(pos) instanceof ChessFigureBlockEntity entity ? entity.getYawDegrees() : 0.0f;
-        ChessPieceType promoted = ChessPieceType.fromSymbol(Character.toLowerCase(kind));
+        char promotedSymbol = white ? kind : Character.toLowerCase(kind);
+        char pawnSymbol = white ? 'P' : 'p';
+        ChessPieceType promoted = ChessPieceType.fromSymbol(promotedSymbol);
         if (promoted == null) return;
         world.setBlockState(pos, promoted.block().getDefaultState(), 3);
-        if (world.getBlockEntity(pos) instanceof ChessFigureBlockEntity entity) entity.setYawDegrees(yaw);
-        captured.set(capturedIndex, 'p');
-        if (state.blackCaptureOrigin != null) placeCapturedBlock(world, state.blackCaptureOrigin, capturedIndex, 'p');
+        if (world.getBlockEntity(pos) instanceof ChessFigureBlockEntity entity) {
+            if (promoted == ChessPieceType.WHITE_KNIGHT) entity.setYawDegrees(180.0f);
+            else if (promoted == ChessPieceType.BLACK_KNIGHT) entity.setYawDegrees(0.0f);
+            else entity.setYawDegrees(yaw);
+        }
+        captured.set(capturedIndex, pawnSymbol);
+        BlockPos tray = white ? state.whiteCaptureOrigin : state.blackCaptureOrigin;
+        if (tray != null) placeCapturedBlock(world, tray, capturedIndex, pawnSymbol);
+    }
+
+    private static final class BotMoveChoice {
+        final int[] move;
+        final int score;
+        BotMoveChoice(int[] move, int score) { this.move = move; this.score = score; }
+    }
+
+    private static final class BotPosition {
+        final char[][] cells;
+        final int enPassantRow, enPassantCol;
+        final boolean whiteKingMoved, blackKingMoved;
+        final boolean whiteLeftRookMoved, whiteRightRookMoved;
+        final boolean blackLeftRookMoved, blackRightRookMoved;
+
+        BotPosition(char[][] cells, BoardState state) {
+            this(cells, state.enPassantRow, state.enPassantCol,
+                state.whiteKingMoved, state.blackKingMoved,
+                state.whiteLeftRookMoved, state.whiteRightRookMoved,
+                state.blackLeftRookMoved, state.blackRightRookMoved);
+        }
+
+        BotPosition(char[][] cells, int enPassantRow, int enPassantCol,
+                    boolean whiteKingMoved, boolean blackKingMoved,
+                    boolean whiteLeftRookMoved, boolean whiteRightRookMoved,
+                    boolean blackLeftRookMoved, boolean blackRightRookMoved) {
+            this.cells = cells;
+            this.enPassantRow = enPassantRow;
+            this.enPassantCol = enPassantCol;
+            this.whiteKingMoved = whiteKingMoved;
+            this.blackKingMoved = blackKingMoved;
+            this.whiteLeftRookMoved = whiteLeftRookMoved;
+            this.whiteRightRookMoved = whiteRightRookMoved;
+            this.blackLeftRookMoved = blackLeftRookMoved;
+            this.blackRightRookMoved = blackRightRookMoved;
+        }
+
+        BotPosition after(int[] move, char promotionKind) {
+            int fr = move[0], fc = move[1], tr = move[2], tc = move[3];
+            char[][] next = ChessRules.copy(cells);
+            char moving = next[fr][fc];
+            char target = next[tr][tc];
+            boolean white = ChessRules.isWhite(moving);
+            int nextEpRow = -1, nextEpCol = -1;
+
+            if (Character.toUpperCase(moving) == 'P' && fc != tc && target == '.'
+                && tr == enPassantRow && tc == enPassantCol) {
+                next[fr][tc] = '.';
+            }
+            next[tr][tc] = moving;
+            next[fr][fc] = '.';
+            if (Character.toUpperCase(moving) == 'K' && Math.abs(tc - fc) == 2) {
+                int rookFrom = tc > fc ? 7 : 0;
+                int rookTo = tc > fc ? 5 : 3;
+                next[tr][rookTo] = next[tr][rookFrom];
+                next[tr][rookFrom] = '.';
+            }
+            if (Character.toUpperCase(moving) == 'P' && Math.abs(tr - fr) == 2) {
+                nextEpRow = (tr + fr) / 2;
+                nextEpCol = fc;
+            }
+            if (Character.toUpperCase(moving) == 'P' && (tr == 0 || tr == 7) && promotionKind != 0) {
+                next[tr][tc] = white ? Character.toUpperCase(promotionKind) : Character.toLowerCase(promotionKind);
+            }
+
+            boolean wkm = whiteKingMoved || (white && Character.toUpperCase(moving) == 'K');
+            boolean bkm = blackKingMoved || (!white && Character.toUpperCase(moving) == 'K');
+            boolean wlrm = whiteLeftRookMoved || (white && Character.toUpperCase(moving) == 'R' && fr == 7 && fc == 0);
+            boolean wrm = whiteRightRookMoved || (white && Character.toUpperCase(moving) == 'R' && fr == 7 && fc == 7);
+            boolean blrm = blackLeftRookMoved || (!white && Character.toUpperCase(moving) == 'R' && fr == 0 && fc == 0);
+            boolean brm = blackRightRookMoved || (!white && Character.toUpperCase(moving) == 'R' && fr == 0 && fc == 7);
+            return new BotPosition(next, nextEpRow, nextEpCol, wkm, bkm, wlrm, wrm, blrm, brm);
+        }
     }
 
     private static void checkEndCondition(ServerWorld world, BoardState state) {
@@ -1927,8 +2122,10 @@ public final class ChessGameManager {
             if (inCheck) {
                 finishMatch(world, "Мат! Победа " + (whiteToMove ? "чёрных" : "белых") + ".");
                 if (state.matchMode == MatchMode.ONE_VS_BOT) {
-                    notifyCheckTeam(world, whiteToMove, "ПРОИГРЫШ", SoundEvents.ENTITY_VILLAGER_NO);
-                    if (!whiteToMove) notifyCheckTeam(world, true, "ПОБЕДА", SoundEvents.UI_TOAST_CHALLENGE_COMPLETE);
+                    boolean humanWhite = !state.botWhite;
+                    boolean botWasCheckmated = whiteToMove == state.botWhite;
+                    notifyCheckTeam(world, humanWhite, botWasCheckmated ? "ПОБЕДА" : "ПРОИГРЫШ",
+                        botWasCheckmated ? SoundEvents.UI_TOAST_CHALLENGE_COMPLETE : SoundEvents.ENTITY_VILLAGER_NO);
                 } else {
                     notifyCheckTeam(world, whiteToMove, "ШАХ И МАТ", SoundEvents.ENTITY_VILLAGER_NO);
                     notifyCheckTeam(world, !whiteToMove, "ПОБЕДА", SoundEvents.UI_TOAST_CHALLENGE_COMPLETE);
@@ -2058,6 +2255,8 @@ public final class ChessGameManager {
         public int matchDurationMinutes;
         public final Set<UUID> participants = new HashSet<>();
         public boolean whiteTurn = true;
+        /** True when the computer controls the white pieces; otherwise the computer controls black. */
+        public boolean botWhite;
         public RuleMode ruleMode = RuleMode.REALISM;
         public MatchMode matchMode = MatchMode.ONE_ONE;
         public int clockMinutes = 10;

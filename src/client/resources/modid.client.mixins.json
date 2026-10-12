@@ -4,9 +4,7 @@
   "compatibilityLevel": "JAVA_17",
   "client": [
     "HideSurvivalHudMixin",
-    "HideFoodIconsMixin",
-    "FadeOverlayMixin",
-    "ChatFadeOverlayMixin"
+    "HideFoodIconsMixin"
   ],
   "injectors": {
     "defaultRequire": 1
