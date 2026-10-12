@@ -30,6 +30,10 @@ public final class ChessWorldConfig extends PersistentState {
     private String zoneCornerDimension = "";
     private BlockPos zoneCorner = BlockPos.ORIGIN;
     private String zoneCornerName = "";
+    private String boardDimension = "";
+    private BlockPos boardOrigin = BlockPos.ORIGIN;
+    private boolean boardBound;
+    private boolean threeDimensional;
     private int fadeDurationTicks = 10;
     private int teleportDelayTicks = 14;
     private int lobbyDelaySeconds = 20;
@@ -48,6 +52,22 @@ public final class ChessWorldConfig extends PersistentState {
     }
 
     public SavedPos getLocation(String name) { return locations.get(name); }
+
+    public boolean hasBoardBinding() { return boardBound && !boardDimension.isBlank(); }
+    public String getBoardDimension() { return boardDimension; }
+    public BlockPos getBoardOrigin() { return boardOrigin.toImmutable(); }
+    public void saveBoardBinding(ServerWorld world, BlockPos origin) {
+        boardDimension = world.getRegistryKey().getValue().toString();
+        boardOrigin = origin.toImmutable();
+        boardBound = true;
+        markDirty();
+    }
+
+    public boolean isThreeDimensional() { return threeDimensional; }
+    public void setThreeDimensional(boolean value) {
+        threeDimensional = value;
+        markDirty();
+    }
 
     public void setLocation(String name, ServerWorld world, BlockPos pos) {
         setLocation(name, world, pos, 0.0f, 0.0f);
@@ -263,6 +283,10 @@ public final class ChessWorldConfig extends PersistentState {
         nbt.putString("zoneCornerDimension", zoneCornerDimension);
         nbt.putLong("zoneCorner", zoneCorner.asLong());
         nbt.putString("zoneCornerName", zoneCornerName);
+        nbt.putString("boardDimension", boardDimension);
+        nbt.putLong("boardOrigin", boardOrigin.asLong());
+        nbt.putBoolean("boardBound", boardBound);
+        nbt.putBoolean("threeDimensional", threeDimensional);
         nbt.putInt("fadeDurationTicks", fadeDurationTicks);
         nbt.putInt("teleportDelayTicks", teleportDelayTicks);
         nbt.putInt("lobbyDelaySeconds", lobbyDelaySeconds);
@@ -315,6 +339,10 @@ public final class ChessWorldConfig extends PersistentState {
         config.zoneCornerDimension = nbt.getString("zoneCornerDimension");
         config.zoneCorner = BlockPos.fromLong(nbt.getLong("zoneCorner"));
         config.zoneCornerName = nbt.getString("zoneCornerName");
+        config.boardDimension = nbt.getString("boardDimension");
+        config.boardOrigin = BlockPos.fromLong(nbt.getLong("boardOrigin"));
+        config.boardBound = nbt.getBoolean("boardBound") && !config.boardDimension.isBlank();
+        config.threeDimensional = nbt.getBoolean("threeDimensional");
         if (nbt.contains("fadeDurationTicks")) config.fadeDurationTicks = Math.max(2, Math.min(100, nbt.getInt("fadeDurationTicks")));
         if (nbt.contains("teleportDelayTicks")) config.teleportDelayTicks = Math.max(0, Math.min(200, nbt.getInt("teleportDelayTicks")));
         if (nbt.contains("lobbyDelaySeconds")) config.lobbyDelaySeconds = Math.max(0, Math.min(3600, nbt.getInt("lobbyDelaySeconds")));

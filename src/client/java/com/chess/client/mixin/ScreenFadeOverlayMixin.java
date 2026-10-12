@@ -8,13 +8,12 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Draws after any active screen, including chat, so GUI elements cannot cut through the fade. */
+/** Draw the transition after the active screen and chat, using the caller's GUI buffer. */
 @Mixin(Screen.class)
 public abstract class ScreenFadeOverlayMixin {
-    @Inject(method = "renderWithTooltip", at = @At("TAIL"))
+    @Inject(method = "renderWithTooltip", at = @At("RETURN"))
     private void chess$drawFadeAfterScreen(DrawContext context, int mouseX, int mouseY,
                                            float delta, CallbackInfo ci) {
         ChessFadeHud.renderOverlay(context);
-        context.draw();
     }
 }

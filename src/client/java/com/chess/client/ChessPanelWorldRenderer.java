@@ -28,6 +28,7 @@ import java.util.Set;
 /** World-mounted wooden chess control board. Every label is rendered without text backgrounds. */
 public final class ChessPanelWorldRenderer {
     private static int modeIndex;
+    private static int viewModeIndex;
     private static long lastScanTick = Long.MIN_VALUE;
     private static World cachedWorld;
     private static final Set<BlockPos> cachedAnchors = new HashSet<>();
@@ -42,6 +43,10 @@ public final class ChessPanelWorldRenderer {
 
     public static void setModeIndex(int index) {
         modeIndex = Math.max(0, Math.min(2, index));
+    }
+
+    public static void setViewModeIndex(boolean threeDimensional) {
+        viewModeIndex = threeDimensional ? 1 : 0;
     }
 
     public static void requestPanelState() {
@@ -88,7 +93,12 @@ public final class ChessPanelWorldRenderer {
             value = u < 64 ? 0 : u < 128 ? 1 : 2;
             action = "panel_mode";
             modeIndex = value;
-        } else if (v >= 70 && v <= 94 && u >= 24 && u <= 168) {
+        } else if (v >= 70 && v <= 91 && u >= 64 && u <= 128) {
+            // 2D/3D is a presentation choice; side is still selected only through trigger zones.
+            value = u < 96 ? 0 : 1;
+            action = "panel_view";
+            viewModeIndex = value;
+        } else if (v >= 98 && v <= 124 && u >= 24 && u <= 168) {
             // Side is deliberately not chosen here: players select it by entering trigger zones.
             action = "panel_start";
         }
@@ -192,7 +202,15 @@ public final class ChessPanelWorldRenderer {
             drawCentered(renderer, buffers, matrix, label, centers[i], 52,
                 selected ? 0xFFFFB52E : 0xFFF4E7C6);
         }
-        drawCentered(renderer, buffers, matrix, "НАЧАТЬ ПАРТИЮ", 0, 82, 0xFFFFD16A);
+        drawCentered(renderer, buffers, matrix, "ВИД ПАРТИИ", 0, 69, 0xFFFFD16A);
+        String[] views = {"2D", "3D"};
+        int[] viewCenters = {-32, 32};
+        for (int i = 0; i < views.length; i++) {
+            boolean selected = i == viewModeIndex;
+            drawCentered(renderer, buffers, matrix, selected ? "[ " + views[i] + " ]" : views[i],
+                viewCenters[i], 85, selected ? 0xFFFFB52E : 0xFFF4E7C6);
+        }
+        drawCentered(renderer, buffers, matrix, "НАЧАТЬ ПАРТИЮ", 0, 111, 0xFFFFD16A);
         matrices.pop();
     }
 

@@ -6,7 +6,8 @@
     "HideSurvivalHudMixin",
     "HideFoodIconsMixin",
     "GameRendererFadeOverlayMixin",
-    "ScreenFadeOverlayMixin"
+    "ScreenFadeOverlayMixin",
+    "InGameHudFadeOverlayMixin"
   ],
   "injectors": {
     "defaultRequire": 1

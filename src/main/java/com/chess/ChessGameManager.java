@@ -51,6 +51,15 @@ public final class ChessGameManager {
 
     public static void registerTicker() {
         ServerTickEvents.END_SERVER_TICK.register(ChessGameManager::tick);
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            // RegistryKey is shared by all saves (e.g. minecraft:overworld). Never keep a
+            // BoardState from the previous save around when a new server/world is opened.
+            BOARDS.clear();
+            KIT_SLOT_WARNED.clear();
+            CHESS_GLOWING.clear();
+            ACTIVE_ZONE_VISITS.clear();
+            DISCONNECTED_DURING_ACTIVE_MATCH.clear();
+        });
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
             server.execute(() -> handlePlayerJoin(handler.player)));
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
@@ -65,6 +74,19 @@ public final class ChessGameManager {
                 state.matchMode = config.getMatchMode();
                 state.ruleMode = config.getRuleMode();
                 state.matchDurationMinutes = config.getMatchDurationMinutes();
+                state.threeDimensional = config.isThreeDimensional();
+                String dimension = serverWorld.getRegistryKey().getValue().toString();
+                if (config.hasBoardBinding() && dimension.equals(config.getBoardDimension())) {
+                    state.origin = config.getBoardOrigin();
+                    state.configured = true;
+                } else if (!config.hasBoardBinding()) {
+                    BlockPos discovered = discoverExistingBoard(serverWorld);
+                    if (discovered != null) {
+                        state.origin = discovered.toImmutable();
+                        state.configured = true;
+                        config.saveBoardBinding(serverWorld, discovered);
+                    }
+                }
                 for (String team : List.of("white", "black")) {
                     ChessWorldConfig.SavedPos saved = config.getLocation(team);
                     if (saved != null && saved.dimension.equals(serverWorld.getRegistryKey().getValue().toString()))
@@ -80,9 +102,83 @@ public final class ChessGameManager {
         state.origin = firstSquare.toImmutable();
         state.configured = true;
         state.pending = null;
+        ChessWorldConfig.get(world.getServer()).saveBoardBinding(world, firstSquare);
         world.getPlayers().forEach(p -> p.sendMessage(Text.literal(
             "Шахматное поле привязано: " + firstSquare.getX() + " " + firstSquare.getY() + " " + firstSquare.getZ()
         ), false));
+    }
+
+    /** Rebinds to an existing 8x8 checkerboard near the spawn/players without rebuilding it. */
+    public static boolean autoBindExistingBoard(ServerWorld world) {
+        BoardState state = board(world);
+        if (state.configured) return true;
+        ChessWorldConfig config = ChessWorldConfig.get(world.getServer());
+        if (config.hasBoardBinding()) return false;
+        BlockPos discovered = discoverExistingBoard(world);
+        if (discovered == null) return false;
+        state.origin = discovered.toImmutable();
+        state.configured = true;
+        state.pending = null;
+        config.saveBoardBinding(world, discovered);
+        broadcast(world, "Существующее шахматное поле автоматически найдено и привязано: " + discovered.toShortString());
+        return true;
+    }
+
+    private static BlockPos discoverExistingBoard(ServerWorld world) {
+        List<BlockPos> centers = new ArrayList<>();
+        centers.add(world.getSpawnPos());
+        for (ServerPlayerEntity player : world.getPlayers()) {
+            BlockPos center = player.getBlockPos();
+            boolean nearExistingCenter = false;
+            for (BlockPos existing : centers) {
+                long dx = (long) existing.getX() - center.getX();
+                long dy = (long) existing.getY() - center.getY();
+                long dz = (long) existing.getZ() - center.getZ();
+                if (dx * dx + dy * dy + dz * dz <= 256L) {
+                    nearExistingCenter = true;
+                    break;
+                }
+            }
+            if (!nearExistingCenter) centers.add(center);
+        }
+        for (BlockPos center : centers) {
+            int minX = center.getX() - 24, maxX = center.getX() + 24;
+            int minZ = center.getZ() - 24, maxZ = center.getZ() + 24;
+            int minY = Math.max(world.getBottomY(), center.getY() - 6);
+            int maxY = Math.min(world.getTopY() - 1, center.getY() + 6);
+            for (int y = minY; y <= maxY; y++) {
+                for (int x = minX; x <= maxX; x++) {
+                    for (int z = minZ; z <= maxZ; z++) {
+                        BlockPos candidate = new BlockPos(x, y, z);
+                        BlockState first = world.getBlockState(candidate);
+                        boolean firstIsWhite = first.isOf(ModBlocks.CHESS_WHITE_SQUARE);
+                        if (!firstIsWhite && !first.isOf(ModBlocks.CHESS_BLACK_SQUARE)) continue;
+                        if (isExistingCheckerboard(world, candidate, firstIsWhite)) return candidate;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean isChessSquare(BlockState state) {
+        return state.isOf(ModBlocks.CHESS_WHITE_SQUARE) || state.isOf(ModBlocks.CHESS_BLACK_SQUARE);
+    }
+
+    private static boolean isExistingCheckerboard(ServerWorld world, BlockPos origin, boolean firstIsWhite) {
+        // The saved origin is the north-west (minimum X/Z) corner. Reject interior cells:
+        // otherwise every 8x8 subsection of a larger checkerboard could look like a new board.
+        if (isChessSquare(world.getBlockState(origin.west()))
+            || isChessSquare(world.getBlockState(origin.north()))) return false;
+        for (int row = 0; row < 8; row++) {
+            for (int col = 0; col < 8; col++) {
+                boolean expectedWhite = ((row + col) & 1) == 0 ? firstIsWhite : !firstIsWhite;
+                BlockState tile = world.getBlockState(origin.add(col, 0, row));
+                if (expectedWhite ? !tile.isOf(ModBlocks.CHESS_WHITE_SQUARE)
+                                  : !tile.isOf(ModBlocks.CHESS_BLACK_SQUARE)) return false;
+            }
+        }
+        return true;
     }
 
     /** Builds an alternating 8x8 board at the supplied first tile coordinate. */
@@ -127,7 +223,8 @@ public final class ChessGameManager {
 
     public static void start(ServerWorld world) {
         BoardState state = board(world);
-        if (!state.configured) throw new IllegalStateException("Сначала привяжите шахматное поле конфигуратором.");
+        if (!state.configured) autoBindExistingBoard(world);
+        if (!state.configured) throw new IllegalStateException("Поле не найдено автоматически. Убедись, что видны все 64 клетки, или привяжи поле один раз конфигуратором.");
         if (state.running || state.countdownActive || state.finishPending) throw new IllegalStateException("Партия уже запущена, готовится к запуску или завершается.");
         boolean anotherMatch = BOARDS.values().stream().anyMatch(other -> other.running || other.countdownActive || other.finishPending);
         if (anotherMatch) throw new IllegalStateException("Другая шахматная партия уже идёт.");
@@ -165,6 +262,9 @@ public final class ChessGameManager {
 
         if (state.matchEnded || boardIsEmpty(world, state)) resetBoard(world);
         state.botWhite = state.matchMode == MatchMode.ONE_VS_BOT && selectedWhite.isEmpty();
+        state.botMoveCount = 0;
+        state.botLastMovedKind = '.';
+        state.botNoMovesNotice = false;
 
         state.observerOriginalModes.clear();
         for (UUID id : selectedWhite) {
@@ -194,7 +294,7 @@ public final class ChessGameManager {
         state.countdownNextTick = serverTick(world.getServer()) + 1L;
         state.returnToLobbyAtTick = -1L;
         state.matchEnded = false;
-        broadcast(world, "Подготовка партии: 3… 2… 1…");
+        // The 3–2–1 countdown is title-only; keep the chat clear.
     }
 
     private static void beginMatch(ServerWorld world) {
@@ -205,6 +305,7 @@ public final class ChessGameManager {
         state.matchMode = config.getMatchMode();
         state.ruleMode = config.getRuleMode();
         state.matchDurationMinutes = config.getMatchDurationMinutes();
+        state.threeDimensional = config.isThreeDimensional();
         state.running = true;
         state.paused = false;
         state.pausedByDisconnect = false;
@@ -353,7 +454,7 @@ public final class ChessGameManager {
 
     public static void handleAdminAction(ServerPlayerEntity player, String action, BlockPos pos,
                                          String a, String b, String c, int v1, int v2, int v3) {
-        boolean publicPanelAction = java.util.Set.of("get_panel_state", "panel_mode", "select_white", "select_black",
+        boolean publicPanelAction = java.util.Set.of("get_panel_state", "panel_mode", "panel_view", "select_white", "select_black",
             "clear_selection", "panel_start").contains(action);
         if (!"get_settings".equals(action) && !"get_fade_settings".equals(action)
             && !publicPanelAction && !player.getCommandSource().hasPermissionLevel(2)) {
@@ -372,7 +473,7 @@ public final class ChessGameManager {
                     ChessNetwork.sendFadeSettings(player, config);
                     return;
                 case "get_panel_state":
-                    ChessNetwork.sendPanelMode(player, config.getMatchMode());
+                    ChessNetwork.sendPanelMode(player, config.getMatchMode(), state.threeDimensional);
                     return;
                 case "panel_mode": {
                     if (state.running || state.countdownActive || state.finishPending) {
@@ -395,6 +496,15 @@ public final class ChessGameManager {
                     }
                     ChessNetwork.broadcastPanelMode(player.getServer(), mode);
                     tell(player, "Выбран режим: " + (mode == MatchMode.ONE_ONE ? "1v1" : mode == MatchMode.TWO_TWO ? "2v2" : "vs_bot"));
+                    return;
+                }
+                case "panel_view": {
+                    if (state.running || state.countdownActive || state.finishPending) {
+                        tell(player, "Нельзя менять вид партии во время подготовки, партии или завершения.");
+                        return;
+                    }
+                    setViewMode(world, v1 != 0);
+                    ChessNetwork.broadcastPanelMode(player.getServer(), config.getMatchMode());
                     return;
                 }
                 case "select_white":
@@ -1147,6 +1257,7 @@ public final class ChessGameManager {
         state.whiteClockTicks = state.blackClockTicks = state.clockMaxTicks();
         state.whiteCapturedPieces.clear();
         state.blackCapturedPieces.clear();
+        autoConfigureCaptures(world, state);
         state.selected3DPieces.clear();
         state.countdownActive = false;
         state.countdownFadeStarted = false;
@@ -1192,7 +1303,7 @@ public final class ChessGameManager {
     }
 
     private static void clearCaptureTray(ServerWorld world, BlockPos tray) {
-        for (int row = 0; row < 2; row++) for (int col = 0; col < 8; col++) {
+        for (int row = 0; row < 4; row++) for (int col = 0; col < 8; col++) {
             BlockPos piece = tray.add(col, 1, row);
             if (ChessPieceType.fromBlock(world.getBlockState(piece)) != null)
                 world.setBlockState(piece, Blocks.AIR.getDefaultState(), 3);
@@ -1292,6 +1403,7 @@ public final class ChessGameManager {
     public static void setViewMode(ServerWorld world, boolean threeDimensional) {
         BoardState state = board(world);
         state.threeDimensional = threeDimensional;
+        ChessWorldConfig.get(world.getServer()).setThreeDimensional(threeDimensional);
         state.selected3DPieces.clear();
         broadcast(world, threeDimensional ? "Режим 3D включён." : "Режим 2D включён.");
         for (ServerPlayerEntity player : world.getPlayers())
@@ -1378,7 +1490,7 @@ public final class ChessGameManager {
             return false;
         }
         List<Character> stock = white ? state.whiteCapturedPieces : state.blackCapturedPieces;
-        if (stock.size() >= 16) {
+        if (stock.size() >= 32) {
             player.sendMessage(Text.literal("Лоток срубленных фигур уже заполнен."), false);
             return false;
         }
@@ -1446,7 +1558,15 @@ public final class ChessGameManager {
         // Captures belong on the capturer's own side: white at the far (south) end, black at the near (north) end.
         state.whiteCaptureOrigin = state.origin.add(0, 0, 10);
         state.blackCaptureOrigin = state.origin.add(0, 0, -4);
-        for (int row = 0; row < 2; row++) for (int col = 0; col < 8; col++) {
+        // Remove stale figure blocks from earlier rounds before rebuilding the stock trays.
+        for (BlockPos tray : List.of(state.whiteCaptureOrigin, state.blackCaptureOrigin)) {
+            for (int index = 0; index < 32; index++) {
+                BlockPos slot = tray.add(index % 8, 1, index / 8);
+                if (ChessPieceType.fromBlock(world.getBlockState(slot)) != null)
+                    world.setBlockState(slot, Blocks.AIR.getDefaultState(), 3);
+            }
+        }
+        for (int row = 0; row < 4; row++) for (int col = 0; col < 8; col++) {
             BlockPos whiteTile = state.whiteCaptureOrigin.add(col, 0, row);
             BlockPos blackTile = state.blackCaptureOrigin.add(col, 0, row);
             if (isAirOrChessTile(world.getBlockState(whiteTile)))
@@ -1466,34 +1586,23 @@ public final class ChessGameManager {
 
     private static void placeCapturedBlock(ServerWorld world, BlockPos tray, int index, char symbol) {
         ChessPieceType type = ChessPieceType.fromSymbol(symbol);
-        if (type == null || tray == null || index >= 16) return;
+        if (type == null || tray == null || index < 0 || index >= 32) return;
         world.setBlockState(tray.add(index % 8, 1, index / 8), type.block().getDefaultState(), 3);
     }
 
     private static void registerCapturedPiece(ServerWorld world, BoardState state, char symbol, boolean capturerWhite) {
         if (ChessPieceType.fromSymbol(symbol) == null) return;
         List<Character> pieces = capturerWhite ? state.whiteCapturedPieces : state.blackCapturedPieces;
-        if (pieces.size() >= 16) return;
+        if (pieces.size() >= 32) return;
         pieces.add(symbol);
         if (state.whiteCaptureOrigin == null || state.blackCaptureOrigin == null) autoConfigureCaptures(world, state);
         placeCapturedBlock(world, capturerWhite ? state.whiteCaptureOrigin : state.blackCaptureOrigin, pieces.size() - 1, symbol);
     }
 
     public static String promotionOptions(BoardState state, boolean white) {
-        List<Character> captured = white ? state.whiteCapturedPieces : state.blackCapturedPieces;
-        StringBuilder available = new StringBuilder();
-        for (char capturedSymbol : captured) {
-            ChessPieceType capturedType = ChessPieceType.fromSymbol(capturedSymbol);
-            if (capturedType == null || capturedType.isWhite() == white) continue;
-            char kind = Character.toUpperCase(capturedSymbol);
-            if ("QRBN".indexOf(kind) >= 0 && available.indexOf(String.valueOf(kind)) < 0)
-                available.append(kind);
-        }
-        // Stable ordering prevents the bot from choosing the first captured piece accidentally.
-        StringBuilder result = new StringBuilder();
-        for (char kind : "QRBN".toCharArray())
-            if (available.indexOf(String.valueOf(kind)) >= 0) result.append(kind);
-        return result.toString();
+        // Standard chess allows repeated promotions. The pawn itself is the source piece;
+        // a captured piece of the selected type is a visual reserve, not a prerequisite.
+        return "QRBN";
     }
 
     public static void choosePromotion(ServerPlayerEntity player, String choice) {
@@ -1511,6 +1620,10 @@ public final class ChessGameManager {
         }
         List<Character> captured = state.promotionWhite ? state.whiteCapturedPieces : state.blackCapturedPieces;
         int capturedIndex = -1;
+        // Prefer a reserve matching the selected type. If it was not previously captured,
+        // use another captured figure as the physical reserve; the reserve need not be a queen
+        // for the pawn to become a queen. If the tray has no enemy pieces at all, transform
+        // the pawn in place without adding a duplicate model to the tray.
         for (int i = 0; i < captured.size(); i++) {
             ChessPieceType candidate = ChessPieceType.fromSymbol(captured.get(i));
             if (candidate != null && candidate.isWhite() != state.promotionWhite
@@ -1520,8 +1633,14 @@ public final class ChessGameManager {
             }
         }
         if (capturedIndex < 0) {
-            tell(player, "Такой фигуры больше нет на поле срубленных: сначала нужно взять её.");
-            return;
+            for (int i = 0; i < captured.size(); i++) {
+                ChessPieceType candidate = ChessPieceType.fromSymbol(captured.get(i));
+                if (candidate != null && candidate.isWhite() != state.promotionWhite
+                    && Character.toUpperCase(captured.get(i)) != 'K') {
+                    capturedIndex = i;
+                    break;
+                }
+            }
         }
         char symbol = state.promotionWhite ? kind : Character.toLowerCase(kind);
         char pawnSymbol = state.promotionWhite ? 'P' : 'p';
@@ -1536,10 +1655,13 @@ public final class ChessGameManager {
             else if (promoted == ChessPieceType.BLACK_KNIGHT) entity.setYawDegrees(0.0f);
             else entity.setYawDegrees(yaw);
         }
-        // The captured piece is consumed by the promotion; replace its tray slot with the promoting pawn.
-        captured.set(capturedIndex, pawnSymbol);
-        BlockPos tray = state.promotionWhite ? state.whiteCaptureOrigin : state.blackCaptureOrigin;
-        if (tray != null) placeCapturedBlock(world, tray, capturedIndex, pawnSymbol);
+        // Replace the consumed reserve with the promoting pawn. With no reserve, the pawn
+        // changes block type in place and no additional figure is inserted into the tray.
+        if (capturedIndex >= 0) {
+            captured.set(capturedIndex, pawnSymbol);
+            BlockPos tray = state.promotionWhite ? state.whiteCaptureOrigin : state.blackCaptureOrigin;
+            if (tray != null) placeCapturedBlock(world, tray, capturedIndex, pawnSymbol);
+        }
         state.promotionPending = false;
         state.promotionPlayerId = null;
         state.whiteTurn = !state.whiteTurn;
@@ -1764,6 +1886,20 @@ public final class ChessGameManager {
         char moving = cells[fr][fc], target = cells[tr][tc];
         ChessPieceType type = ChessPieceType.fromSymbol(moving);
         if (type == null) return;
+        if (BOT_PLAYER_ID.equals(moverId)) {
+            boolean kingMoved = type.isWhite() ? state.whiteKingMoved : state.blackKingMoved;
+            boolean leftRookMoved = type.isWhite() ? state.whiteLeftRookMoved : state.blackLeftRookMoved;
+            boolean rightRookMoved = type.isWhite() ? state.whiteRightRookMoved : state.blackRightRookMoved;
+            boolean legal = state.running && type.isWhite() == state.whiteTurn
+                && !(target != '.' && Character.toUpperCase(target) == 'K')
+                && ChessRules.isLegalMove(cells, fr, fc, tr, tc, true,
+                    state.enPassantRow, state.enPassantCol, kingMoved, leftRookMoved, rightRookMoved);
+            if (!legal) {
+                state.botMoveAtTick = serverTick(world.getServer()) + 20L;
+                broadcast(world, "Бот отменил недопустимый ход; позиция оставлена без изменений.");
+                return;
+            }
+        }
         BlockPos from = piecePos(state, fr, fc);
         BlockPos to = piecePos(state, tr, tc);
         BlockState movingState = world.getBlockState(from);
@@ -1895,6 +2031,18 @@ public final class ChessGameManager {
                 continue;
             }
 
+            char[][] liveCells = readBoard(world);
+            char expectedTarget = move.enPassantCapture != null ? '.' : move.capturedSymbol;
+            boolean invalidEnPassantVictim = move.enPassantCapture != null
+                && liveCells[move.fr][move.tc] != move.capturedSymbol;
+            if (liveCells[move.fr][move.fc] != move.type.symbol()
+                || liveCells[move.tr][move.tc] != expectedTarget || invalidEnPassantVictim) {
+                state.pending = null;
+                state.selected3DPieces.clear();
+                broadcast(world, "Ход отменён: положение фигур изменилось во время анимации.");
+                ChessNetwork.broadcastBoard(world);
+                continue;
+            }
             boolean needsPromotion = (move.type == ChessPieceType.WHITE_PAWN && move.tr == 0)
                 || (move.type == ChessPieceType.BLACK_PAWN && move.tr == 7);
             if (move.capturedSymbol != '.') {
@@ -1915,13 +2063,19 @@ public final class ChessGameManager {
             }
             state.pending = null;
             state.selected3DPieces.clear();
+            if (BOT_PLAYER_ID.equals(move.playerId)) {
+                state.botMoveCount++;
+                state.botLastMovedKind = Character.toUpperCase(move.type.symbol());
+            }
             world.playSound(null, move.to, SoundEvents.BLOCK_WOOD_PLACE, SoundCategory.PLAYERS, 0.65f, 1.0f);
 
             String options = needsPromotion ? promotionOptions(state, move.type.isWhite()) : "";
             if (needsPromotion && !options.isEmpty()
                 && state.matchMode == MatchMode.ONE_VS_BOT && move.type.isWhite() == state.botWhite
                 && BOT_PLAYER_ID.equals(move.playerId)) {
-                promoteBotPawn(world, state, options.charAt(0), move.tr, move.tc, state.botWhite);
+                char botPromotion = preferredPromotionKind(options,
+                    ChessWorldConfig.get(server).getBotDifficulty());
+                promoteBotPawn(world, state, botPromotion, move.tr, move.tc, state.botWhite);
                 state.whiteTurn = !state.botWhite;
                 updateTeamHighlights(server, state);
                 updateTurnGlow(world, state);
@@ -1934,7 +2088,7 @@ public final class ChessGameManager {
                 state.promotionCol = move.tc;
                 state.promotionPlayerId = move.playerId;
                 for (ServerPlayerEntity player : world.getPlayers()) ChessNetwork.sendBoard(player);
-                broadcast(world, "Пешка дошла до края доски. Выбери одну из реально срубленных фигур.");
+                broadcast(world, "Пешка дошла до края доски. Выбери превращение: ферзь, ладья, слон или конь.");
             } else {
                 if (needsPromotion) tellPlayerByUuid(world, move.playerId,
                     "Нет доступной срубленной фигуры для превращения: пешка остаётся пешкой.");
@@ -2025,6 +2179,14 @@ public final class ChessGameManager {
                     Integer.MIN_VALUE + 1, Integer.MAX_VALUE - 1, 1, beamWidth,
                     allowedPieces, botPromotionKind, humanPromotionKind, style, nodes);
             }
+            char movingKind = Character.toUpperCase(root.cells[move[0]][move[1]]);
+            int homeRow = botWhite ? 7 : 0;
+            if (movingKind == 'N' && move[0] == homeRow && state.botMoveCount < 2) {
+                score -= state.botMoveCount == 0 ? 520
+                    : state.botLastMovedKind == 'N' ? 760 : 260;
+            }
+            if (movingKind == state.botLastMovedKind && movingKind != 'K')
+                score -= difficulty == ChessWorldConfig.BotDifficulty.EASY ? 10 : 28;
             scored.add(new BotMoveChoice(move, score));
             if (score > bestScore) bestScore = score;
         }
@@ -2209,7 +2371,16 @@ public final class ChessGameManager {
                 break;
             }
         }
-        if (capturedIndex < 0) return;
+        if (capturedIndex < 0) {
+            for (int i = 0; i < captured.size(); i++) {
+                ChessPieceType candidate = ChessPieceType.fromSymbol(captured.get(i));
+                if (candidate != null && candidate.isWhite() != white
+                    && Character.toUpperCase(captured.get(i)) != 'K') {
+                    capturedIndex = i;
+                    break;
+                }
+            }
+        }
         BlockPos pos = piecePos(state, row, col);
         float yaw = world.getBlockEntity(pos) instanceof ChessFigureBlockEntity entity ? entity.getYawDegrees() : 0.0f;
         char promotedSymbol = white ? kind : Character.toLowerCase(kind);
@@ -2222,9 +2393,11 @@ public final class ChessGameManager {
             else if (promoted == ChessPieceType.BLACK_KNIGHT) entity.setYawDegrees(0.0f);
             else entity.setYawDegrees(yaw);
         }
-        captured.set(capturedIndex, pawnSymbol);
-        BlockPos tray = white ? state.whiteCaptureOrigin : state.blackCaptureOrigin;
-        if (tray != null) placeCapturedBlock(world, tray, capturedIndex, pawnSymbol);
+        if (capturedIndex >= 0) {
+            captured.set(capturedIndex, pawnSymbol);
+            BlockPos tray = white ? state.whiteCaptureOrigin : state.blackCaptureOrigin;
+            if (tray != null) placeCapturedBlock(world, tray, capturedIndex, pawnSymbol);
+        }
     }
 
     private static final class BotMoveChoice {
@@ -2467,6 +2640,8 @@ public final class ChessGameManager {
         public boolean whiteTurn = true;
         /** True when the computer controls the white pieces; otherwise the computer controls black. */
         public boolean botWhite;
+        public int botMoveCount;
+        public char botLastMovedKind = '.';
         /** Optional DEV-only filter for which kinds of pieces the bot may move. */
         public String botAllowedPieces = "KQRBNP";
         public boolean botNoMovesNotice;

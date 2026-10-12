@@ -107,15 +107,18 @@ public final class ChessNetwork {
         }
     }
 
-    public static void sendPanelMode(ServerPlayerEntity player, ChessGameManager.MatchMode mode) {
+    public static void sendPanelMode(ServerPlayerEntity player, ChessGameManager.MatchMode mode, boolean threeDimensional) {
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeInt(mode == ChessGameManager.MatchMode.ONE_ONE ? 0
             : mode == ChessGameManager.MatchMode.TWO_TWO ? 1 : 2);
+        buf.writeBoolean(threeDimensional);
         ServerPlayNetworking.send(player, PANEL_MODE_STATE, buf);
     }
 
     public static void broadcastPanelMode(MinecraftServer server, ChessGameManager.MatchMode mode) {
-        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) sendPanelMode(player, mode);
+        boolean threeDimensional = ChessWorldConfig.get(server).isThreeDimensional();
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList())
+            sendPanelMode(player, mode, threeDimensional);
     }
 
     public static void sendFadeSettings(ServerPlayerEntity player, ChessWorldConfig config) {

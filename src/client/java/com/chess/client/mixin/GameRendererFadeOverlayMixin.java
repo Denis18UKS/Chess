@@ -9,15 +9,21 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Runs even when F1 hides the HUD, because GameRenderer still renders gameplay. */
+/** Fallback for F1: if vanilla skips HUD rendering, draw the fade at the end of the frame. */
 @Mixin(GameRenderer.class)
 public abstract class GameRendererFadeOverlayMixin {
+    @Inject(method = "render", at = @At("HEAD"))
+    private void chess$beginFadeFrame(float tickDelta, long startTime, boolean tick, CallbackInfo ci) {
+        ChessFadeHud.beginRenderFrame();
+    }
+
     @Inject(method = "render", at = @At("TAIL"))
     private void chess$drawFadeAfterGame(float tickDelta, long startTime, boolean tick, CallbackInfo ci) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.getWindow() == null || client.currentScreen != null) return;
+        if (client == null || client.getWindow() == null || client.currentScreen != null
+            || ChessFadeHud.wasHudOverlayDrawnThisFrame()) return;
         DrawContext context = new DrawContext(client, client.getBufferBuilders().getEntityVertexConsumers());
-        ChessFadeHud.renderOverlay(context);
+        ChessFadeHud.renderHudOverlay(context);
         context.draw();
     }
 }

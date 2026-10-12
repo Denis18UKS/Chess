@@ -14,11 +14,25 @@ public final class ChessFadeHud {
     private static long holdNanos;
     private static long fadeInNanos;
     private static boolean active;
+    private static boolean hudOverlayDrawnThisFrame;
 
     private ChessFadeHud() {}
 
-    // Preserve the existing initializer API; the GlobalFadeOverlayMixin owns rendering.
-    public static void register() {}
+    // Fabric's HUD callback covers the normal path; mixins below provide the F1 and open-screen paths.
+    public static void register() {
+        net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback.EVENT.register(
+            (context, tickDelta) -> renderHudOverlay(context));
+    }
+
+    public static void beginRenderFrame() { hudOverlayDrawnThisFrame = false; }
+    public static boolean wasHudOverlayDrawnThisFrame() { return hudOverlayDrawnThisFrame; }
+
+    public static void renderHudOverlay(DrawContext context) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (hudOverlayDrawnThisFrame || client == null || client.currentScreen != null) return;
+        renderOverlay(context);
+        hudOverlayDrawnThisFrame = true;
+    }
 
     public static void start(int fadeOutTicks, int holdTicks, int fadeInTicks) {
         fadeOutNanos = Math.max(1L, fadeOutTicks) * 50_000_000L;
@@ -55,6 +69,9 @@ public final class ChessFadeHud {
         else alpha = 1.0 - (elapsed - holdEnd) / (double) fadeInNanos;
         int opacity = (int)Math.max(0, Math.min(255, Math.round(alpha * 255.0)));
         if (opacity <= 0) return;
+        // Explicit blend state makes the alpha-black GUI quad independent of prior HUD render state.
+        com.mojang.blaze3d.systems.RenderSystem.enableBlend();
+        com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc();
         context.fill(0, 0, client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight(),
             (opacity << 24) | 0x000000);
     }

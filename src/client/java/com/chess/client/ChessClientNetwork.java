@@ -81,7 +81,11 @@ public final class ChessClientNetwork {
 
         ClientPlayNetworking.registerGlobalReceiver(ChessNetwork.PANEL_MODE_STATE, (client, handler, buf, responseSender) -> {
             int mode = buf.readInt();
-            client.execute(() -> ChessPanelWorldRenderer.setModeIndex(mode));
+            boolean threeDimensional = buf.readBoolean();
+            client.execute(() -> {
+                ChessPanelWorldRenderer.setModeIndex(mode);
+                ChessPanelWorldRenderer.setViewModeIndex(threeDimensional);
+            });
         });
 
         ClientPlayNetworking.registerGlobalReceiver(ChessNetwork.FADE_SETTINGS_STATE, (client, handler, buf, responseSender) -> {

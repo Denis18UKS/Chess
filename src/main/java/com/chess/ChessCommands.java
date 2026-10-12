@@ -252,10 +252,17 @@ public final class ChessCommands {
                             StringArgumentType.getString(ctx, "piece")) ? 1 : 0;
                     })))));
 
-        dispatcher.register(literal("chessboard").then(literal("check").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
-            ServerPlayerEntity player = ctx.getSource().getPlayer();
-            return ChessGameManager.checkBoard(ctx.getSource().getWorld(), player) ? 1 : 0;
-        })));
+        dispatcher.register(literal("chessboard")
+            .then(literal("check").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
+                ServerPlayerEntity player = ctx.getSource().getPlayer();
+                return ChessGameManager.checkBoard(ctx.getSource().getWorld(), player) ? 1 : 0;
+            }))
+            .then(literal("auto").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
+                boolean found = ChessGameManager.autoBindExistingBoard(ctx.getSource().getWorld());
+                if (found) ctx.getSource().sendFeedback(() -> Text.literal("Шахматное поле обнаружено и сохранено. Следующие перезапуски больше не потребуют повторной привязки."), false);
+                else ctx.getSource().sendError(Text.literal("Поле не найдено рядом со спавном/игроками. Подойди ближе к 64 клеткам и повтори /chessboard auto, либо привяжи поле один раз."));
+                return found ? 1 : 0;
+            })));
     }
 
     private static int setBotDifficulty(ServerCommandSource source, ChessWorldConfig.BotDifficulty difficulty) {
