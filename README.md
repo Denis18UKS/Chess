@@ -13,7 +13,37 @@ This branch adds the foundation for a world-backed chess board, twelve figure bl
 - Fabric API for Minecraft 1.20.1
 - GeckoLib 4.4.9 or newer compatible with Fabric 1.20.1
 
-Install the built `chess-1.1.0-1.20.1.jar` into `.minecraft/mods`. Multiplayer users need compatible client/server installations.
+Install the built `chess-1.2.0-1.20.1.jar` into `.minecraft/mods`. Multiplayer servers and all clients need compatible versions of the mod.
+
+## Match lifecycle and lobby (current branch)
+
+### World control panel
+
+Place the multi-block Chess Settings Panel in the world. Its visible controls are rendered on the panel itself:
+
+- Choose **1v1**, **2v2** or **vs_bot**.
+- Each human player preselects **Белые** or **Чёрные** on the panel, or runs `/chess white` / `/chess black`.
+- If you select the wrong side, use the panel’s clear-selection button or `/chess unselect`.
+- Start the match from the panel. The mod validates the roster first; if the required sides are not filled, it reports **«Недостаточно игроков»** and cancels.
+- A 3–2–1 title countdown is shown before the Fade / teleport transition. Scoreboard membership is created only when the match starts.
+
+Required human roster: 1 white + 1 black for 1v1; 2 white + 2 black for 2v2; 1 white player for vs_bot (the other side is controlled by the existing bot logic).
+
+### Lobby and teleport points
+
+Use the **TP Configurator** item on a block to open its tabbed destination editor. Choose one tab — **Лобби**, **Белые**, **Чёрные** or **Наблюдение** — then save the point. The block you target is treated as the floor; the direction you are looking is saved as the arrival direction. Set each destination independently. The mod searches for a safe standing position near the configured block and avoids assigning the same block position to multiple players in one teleport group.
+
+Players who are not participating in an active match are sent to the lobby on join. At match end, participants and current spectators are returned to the lobby, temporary side selections/team membership are cleared, and the chessboard is reset.
+
+### Spectators
+
+Players already online in the lobby when a match starts and who are not in its roster are automatically forced to spectate. Players who join while a match is already running remain in the lobby until they opt in. Press **O** (rebindable in Minecraft Controls) or use `/chess spectate` to toggle viewing. The spectator HUD shows **«Ход белых»** or **«Ход чёрных»**. Spectators are never members of either chess team.
+
+### Fade and team zones
+
+- Use the **Fade & Teleport Configurator** item to set the fade duration and delay until teleportation. The delay is clamped to at least the fade-out duration so a player is not moved before the screen has gone black.
+- In the general Chess Configurator, mark point A and point B to create the dedicated white/black trigger zone. Entering a zone preselects that side outside a match; it does not add a scoreboard member or start a game by itself.
+- Scoreboard teams keep their internal IDs `white` / `black`, but their displayed names are localized as colored **Белые** / **Чёрные**.
 
 ## Set up an arena
 
@@ -21,22 +51,22 @@ Install the built `chess-1.1.0-1.20.1.jar` into `.minecraft/mods`. Multiplayer u
 2. Hold **Chess Board Configurator** and right-click a support block to generate the 8×8 board one block above it. Right-click an existing Chess square to bind that square as the origin; sneak-right-click an existing Chess square to regenerate the pattern. The board extends along positive X and positive Z; figures occupy the block directly above each square.
 3. Place the figure blocks on the upper layer. There are separate white and black King, Queen (Ferz), Rook (Ladya), Bishop (El), Knight (Horse) and Pawn items.
 4. Use `/chessboard check` to count board tiles and figures. It checks for 64 registered Chess square blocks, not whether every square is physically arranged in the correct orientation.
-5. Use `/chess autoconfig` once to create the scoreboard teams, join a side, then start the match.
+5. Use `/chess autoconfig` once to initialize the chess teams and side labels. Then choose the match mode, preselect each player’s side, and start the match as described below.
 
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
 | `/chess start` | Start a match, with white to move first |
-| `/chess stop` | Stop the match |
+| `/chess stop` | Stop the match; starts the configured fade/lobby cleanup |
 | `/chess pause` | Pause/resume a running match |
 | `/chess termination` | End the current match |
 | `/chess realism` | Validate normal piece movement and alternate turns without requiring the held figure |
 | `/chess no_realism` | Free movement mode without strict movement/turn enforcement |
 | `/chess full_realism` | Enforce piece movement, king safety, check/checkmate/stalemate, castling, en passant and pawn promotion |
 | `/chess one_one` | Set 1v1 (default) |
-| `/chess two_two` | Set 2v2 |
-| `/chess white` / `/chess black` | Join the white/black scoreboard team |
+| `/chess two_two` | Set 2v2 |\n| `/chess unselect` | Clear the player’s preselected side before the next match |\n| `/chess spectate` | Toggle watching an active match; press O again or run the command to return to the lobby |
+| `/chess white` / `/chess black` | Preselect the white/black side for the next match; does not add the player to a scoreboard team yet |
 | `/chess turn` | Transfer the turn to the opposite side |
 | `/chess board set <x> <y> <z>` | Set the board origin by command |
 | `/chess tp set white <x> <y> <z>` | Save white teleport destination |
@@ -78,7 +108,7 @@ The build generates the inventory icon PNGs, then creates the remapped mod JAR u
 
 ## Current limits
 
-- Board origin and match settings are stored in memory per dimension, not saved across server restarts.
+- The logical board origin is currently stored in memory per dimension; unlike lobby/teleport/Fade configuration, it is not persisted across server restarts.
 - The world-backed logical board is read from the blocks in a fixed 8×8 region. The configurator can generate the tile pattern, but does not automatically arrange the figures.
 - Full-realism contains the core move/check rules listed above but does not yet implement all formal tournament draw rules, threefold repetition, the 50-move rule, chess clocks or draw offers.
 - The GeckoLib movement animation packet starts from the source figure; block relocation is delayed for an animation window. Fine adjustment of animation duration/axis against the supplied models still needs in-game verification.
