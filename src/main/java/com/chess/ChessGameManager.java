@@ -1449,6 +1449,7 @@ public final class ChessGameManager {
         if (state.matchMode == MatchMode.ONE_VS_BOT && !state.whiteTurn)
             state.botMoveAtTick = serverTick(world.getServer()) + 20L;
         broadcast(world, "Ход передан команде " + (state.whiteTurn ? "white" : "black") + ".");
+        ChessNetwork.broadcastSpectatorState(world, state);
         return true;
     }
 
