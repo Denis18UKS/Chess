@@ -42,12 +42,6 @@ public final class ChessFadeHud {
         active = true;
     }
 
-    /** Compatibility bridge for an older, now-disabled HUD mixin. */
-    @Deprecated
-    public static void renderHudOverlay(DrawContext context) {
-        renderOverlay(context);
-    }
-
     public static void renderOverlay(DrawContext context) {
         if (!active) return;
         MinecraftClient client = MinecraftClient.getInstance();
