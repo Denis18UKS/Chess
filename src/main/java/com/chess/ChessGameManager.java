@@ -609,7 +609,7 @@ public final class ChessGameManager {
                     ? "Игрок команды вернулся. Партия автоматически продолжена."
                     : "Ключевой игрок вернулся. Партия автоматически продолжена.");
                 updateTurnGlow(boardWorld, state);
-                ChessNetwork.broadcastClockState(world);
+                ChessNetwork.broadcastClockState(boardWorld);
             }
         }
     }
@@ -617,10 +617,9 @@ public final class ChessGameManager {
     public static void handlePlayerDisconnect(ServerPlayerEntity player) {
         MinecraftServer server = player.getServer();
         if (server == null) return;
-
-        boolean isActiveParticipant = BOARDS.values().stream()
+        boolean activeParticipant = BOARDS.values().stream()
             .anyMatch(state -> state.running && state.participants.contains(player.getUuid()));
-        if (isActiveParticipant) {
+        if (activeParticipant) {
             DISCONNECTED_DURING_ACTIVE_MATCH.add(player.getUuid());
         } else {
             DISCONNECTED_DURING_ACTIVE_MATCH.remove(player.getUuid());
@@ -631,7 +630,6 @@ public final class ChessGameManager {
                 state.observerOriginalModes.remove(player.getUuid());
             }
         }
-
         for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
             BoardState state = entry.getValue();
             ServerWorld world = server.getWorld(entry.getKey());
@@ -639,18 +637,13 @@ public final class ChessGameManager {
             if (state.paused) continue;
             String teamName = state.lastParticipantTeams.get(player.getUuid());
             if (!"white".equals(teamName) && !"black".equals(teamName)) continue;
-
             boolean shouldPause;
-            if (state.matchMode == MatchMode.ONE_ONE) {
-                shouldPause = true;
-            } else if (state.matchMode == MatchMode.ONE_VS_BOT) {
-                shouldPause = "white".equals(teamName);
-            } else {
-                shouldPause = server.getPlayerManager().getPlayerList().stream()
-                    .noneMatch(other -> !other.getUuid().equals(player.getUuid())
-                        && state.participants.contains(other.getUuid())
-                        && teamName.equals(state.lastParticipantTeams.get(other.getUuid())));
-            }
+            if (state.matchMode == MatchMode.ONE_ONE) shouldPause = true;
+            else if (state.matchMode == MatchMode.ONE_VS_BOT) shouldPause = "white".equals(teamName);
+            else shouldPause = server.getPlayerManager().getPlayerList().stream()
+                .noneMatch(other -> !other.getUuid().equals(player.getUuid())
+                    && state.participants.contains(other.getUuid())
+                    && teamName.equals(state.lastParticipantTeams.get(other.getUuid())));
             if (!shouldPause) continue;
             state.paused = true;
             state.pausedByDisconnect = true;
