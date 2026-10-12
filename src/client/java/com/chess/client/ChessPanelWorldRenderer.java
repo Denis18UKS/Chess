@@ -22,11 +22,16 @@ import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
 /** Renders and handles clickable controls on the actual 3x3 panel blocks in the world. */
 public final class ChessPanelWorldRenderer {
     private static int modeIndex;
     private static boolean panelStateRequested;
+    private static long lastScanTick = Long.MIN_VALUE;
+    private static World cachedWorld;
+    private static final Set<BlockPos> cachedAnchors = new HashSet<>();
     private static final int PIXELS_PER_BLOCK = 64;
     private static final double PIXEL_SCALE = 1.0 / PIXELS_PER_BLOCK;
 
@@ -138,15 +143,27 @@ public final class ChessPanelWorldRenderer {
     private static void renderWorld(WorldRenderContext context) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.world == null || client.player == null || client.textRenderer == null) return;
-        BlockPos playerPos = client.player.getBlockPos();
+        long worldTick = client.world.getTime();
+        if (cachedWorld != client.world || worldTick - lastScanTick >= 5L) {
+            cachedWorld = client.world;
+            lastScanTick = worldTick;
+            cachedAnchors.clear();
+            BlockPos playerPos = client.player.getBlockPos();
+            for (int x = -12; x <= 12; x++) for (int y = -6; y <= 6; y++) for (int z = -12; z <= 12; z++) {
+                BlockPos pos = playerPos.add(x, y, z);
+                BlockState state = client.world.getBlockState(pos);
+                if (state.getBlock() instanceof ChessSettingsPanelBlock
+                    && candidateIsPanel(client.world, pos, state.get(ChessSettingsPanelBlock.FACING))) {
+                    cachedAnchors.add(pos.toImmutable());
+                }
+            }
+        }
+        if (cachedAnchors.isEmpty()) return;
         VertexConsumerProvider.Immediate buffers = client.getBufferBuilders().getEntityVertexConsumers();
-        for (int x = -20; x <= 20; x++) for (int y = -8; y <= 8; y++) for (int z = -20; z <= 20; z++) {
-            BlockPos pos = playerPos.add(x, y, z);
-            BlockState state = client.world.getBlockState(pos);
-            if (!(state.getBlock() instanceof ChessSettingsPanelBlock)) continue;
-            Direction facing = state.get(ChessSettingsPanelBlock.FACING);
-            if (!candidateIsPanel(client.world, pos, facing)) continue;
-            renderOne(context, client.textRenderer, buffers, pos, facing);
+        for (BlockPos anchor : cachedAnchors) {
+            BlockState state = client.world.getBlockState(anchor);
+            if (state.getBlock() instanceof ChessSettingsPanelBlock)
+                renderOne(context, client.textRenderer, buffers, anchor, state.get(ChessSettingsPanelBlock.FACING));
         }
         buffers.draw();
     }
