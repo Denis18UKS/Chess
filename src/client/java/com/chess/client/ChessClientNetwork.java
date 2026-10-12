@@ -72,6 +72,19 @@ public final class ChessClientNetwork {
             client.execute(() -> ChessSpectatorHud.update(watching, whiteTurn));
         });
 
+        ClientPlayNetworking.registerGlobalReceiver(ChessNetwork.FADE_TRANSITION, (client, handler, buf, responseSender) -> {
+            int fadeOutTicks = buf.readInt();
+            int holdTicks = buf.readInt();
+            int fadeInTicks = buf.readInt();
+            client.execute(() -> ChessFadeHud.start(fadeOutTicks, holdTicks, fadeInTicks));
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(ChessNetwork.FADE_SETTINGS_STATE, (client, handler, buf, responseSender) -> {
+            int fadeTicks = buf.readInt();
+            int teleportDelayTicks = buf.readInt();
+            client.execute(() -> ChessFadeConfiguratorScreen.receiveSettings(fadeTicks, teleportDelayTicks));
+        });
+
         ClientPlayNetworking.registerGlobalReceiver(ChessNetwork.CLOCK_STATE, (client, handler, buf, responseSender) -> {
             boolean visible = buf.readBoolean();
             boolean ticking = buf.readBoolean();

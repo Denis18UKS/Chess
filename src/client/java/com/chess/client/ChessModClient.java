@@ -31,6 +31,7 @@ public class ChessModClient implements ClientModInitializer {
         ChessWorldHighlights.register();
         ChessClockHud.register();
         ChessSpectatorHud.register();
+        ChessFadeHud.register();
         KeyBinding spectatorKey = KeyBindingHelper.registerKeyBinding(
             new KeyBinding("key.chess.spectate", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_O, "category.chess"));
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -46,6 +47,11 @@ public class ChessModClient implements ClientModInitializer {
 
         UseBlockCallback.EVENT.register((player, world, hand, hit) -> {
             var stack = player.getStackInHand(hand);
+            if (world.isClient && stack.isOf(ModItems.CHESS_FADE_TOOL)) {
+                MinecraftClient client = MinecraftClient.getInstance();
+                client.setScreen(new ChessFadeConfiguratorScreen(client.currentScreen, hit.getBlockPos()));
+                return ActionResult.SUCCESS;
+            }
             if (world.isClient && stack.isOf(ModItems.CHESS_CONFIG_TOOL)) {
                 MinecraftClient client = MinecraftClient.getInstance();
                 client.setScreen(new ChessConfiguratorScreen(client.currentScreen, hit.getBlockPos()));
@@ -102,6 +108,12 @@ public class ChessModClient implements ClientModInitializer {
         });
 
         UseItemCallback.EVENT.register((player, world, hand) -> {
+            var initialStack = player.getStackInHand(hand);
+            if (initialStack.isOf(ModItems.CHESS_FADE_TOOL)) {
+                if (world.isClient) MinecraftClient.getInstance().setScreen(
+                    new ChessFadeConfiguratorScreen(MinecraftClient.getInstance().currentScreen, player.getBlockPos()));
+                return TypedActionResult.success(initialStack);
+            }
             var stack = player.getStackInHand(hand);
             if (!player.isSneaking() && ModBlocks.isFigureItem(stack)) {
                 if (world.isClient && ChessClientNetwork.threeDimensional) return TypedActionResult.pass(stack);
