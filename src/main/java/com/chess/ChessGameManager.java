@@ -362,10 +362,15 @@ public final class ChessGameManager {
                     MatchMode mode = v1 == 1 ? MatchMode.TWO_TWO : v1 == 2 ? MatchMode.ONE_VS_BOT : MatchMode.ONE_ONE;
                     config.setMatchMode(mode);
                     state.matchMode = mode;
-                    if (mode == MatchMode.ONE_VS_BOT) {
-                        for (Map.Entry<java.util.UUID, String> choice : config.getSelectedTeams().entrySet()) {
-                            if ("black".equals(choice.getValue())) config.clearSelectedTeam(choice.getKey());
-                        }
+                    Map<java.util.UUID, String> selected = config.getSelectedTeams();
+                    int sideLimit = mode == MatchMode.TWO_TWO ? 2 : 1;
+                    for (String side : new String[] {"white", "black"}) {
+                        List<java.util.UUID> owners = selected.entrySet().stream()
+                            .filter(choice -> side.equals(choice.getValue()))
+                            .map(Map.Entry::getKey)
+                            .sorted(java.util.Comparator.comparing(java.util.UUID::toString)).toList();
+                        int allowed = mode == MatchMode.ONE_VS_BOT && "black".equals(side) ? 0 : sideLimit;
+                        for (int i = allowed; i < owners.size(); i++) config.clearSelectedTeam(owners.get(i));
                     }
                     ChessNetwork.broadcastPanelMode(player.getServer(), mode);
                     tell(player, "Выбран режим: " + (mode == MatchMode.ONE_ONE ? "1v1" : mode == MatchMode.TWO_TWO ? "2v2" : "vs_bot"));
@@ -651,13 +656,17 @@ public final class ChessGameManager {
     }
 
     private static void teleportRosterToBoard(ServerWorld world, BoardState state, Set<UUID> ids, boolean white) {
-        int index = 0;
-        for (UUID id : ids) {
-            ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(id);
+        List<UUID> ordered = ids.stream().sorted(java.util.Comparator.comparing(UUID::toString)).toList();
+        Set<UUID> moving = new HashSet<>(ids);
+        Set<BlockPos> reserved = new HashSet<>();
+        for (int index = 0; index < ordered.size(); index++) {
+            ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(ordered.get(index));
             if (player == null) continue;
-            double z = state.origin.getZ() + (white ? -2.5 : 10.5);
-            player.teleport(world, state.origin.getX() + 0.5 + index++, state.origin.getY() + 2.0,
-                z, white ? 180.0f : 0.0f, 0.0f);
+            BlockPos base = state.origin.add(index * 2, 0, white ? -3 : 10);
+            BlockPos feet = findSafeFeetPosition(world, base, reserved, moving);
+            reserved.add(feet);
+            player.teleport(world, feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5,
+                white ? 180.0f : 0.0f, 0.0f);
         }
     }
 
