@@ -151,11 +151,14 @@ public final class ChessGameManager {
         int requiredWhite = state.matchMode == MatchMode.TWO_TWO ? 2 : 1;
         int requiredBlack = state.matchMode == MatchMode.TWO_TWO ? 2 : state.matchMode == MatchMode.ONE_VS_BOT ? 0 : 1;
         if (selectedWhite.size() != requiredWhite || selectedBlack.size() != requiredBlack) {
-            throw new IllegalStateException("Недостаточно игроков. Для режима "
+            String reason = "Недостаточно игроков. Для режима "
                 + (state.matchMode == MatchMode.TWO_TWO ? "2v2 нужны 2 белых и 2 чёрных."
                     : state.matchMode == MatchMode.ONE_VS_BOT ? "vs_bot нужен 1 игрок, выбравший белых."
                     : "1v1 нужны 1 белый и 1 чёрный.")
-                + " Выбери сторону через /chess white или /chess black.");
+                + " Выбери сторону через /chess white или /chess black.";
+            showServerTitle(world.getServer(), "Недостаточно игроков");
+            broadcast(world, reason);
+            throw new IllegalStateException(reason);
         }
 
         state.pendingWhiteParticipants.clear();
