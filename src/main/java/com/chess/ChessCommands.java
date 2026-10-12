@@ -119,10 +119,18 @@ public final class ChessCommands {
                 })) )
             .then(literal("white").executes(ctx -> joinTeam(ctx.getSource(), "white")))
             .then(literal("black").executes(ctx -> joinTeam(ctx.getSource(), "black")))
+            .then(literal("unselect").executes(ctx -> {
+                ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
+                return ChessGameManager.clearTeamSelection(player) ? 1 : 0;
+            }))
+            .then(literal("spectate").executes(ctx -> {
+                ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
+                return ChessGameManager.toggleSpectating(player) ? 1 : 0;
+            }))
             .then(literal("autoconfig").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
                 ensureTeam(ctx.getSource().getServer().getScoreboard(), "white", Formatting.WHITE);
                 ensureTeam(ctx.getSource().getServer().getScoreboard(), "black", Formatting.DARK_GRAY);
-                ctx.getSource().sendFeedback(() -> Text.literal("Созданы команды white и black. Игроки могут использовать /chess white и /chess black."), false);
+                ctx.getSource().sendFeedback(() -> Text.literal("Созданы команды «Белые» и «Чёрные». Предварительный выбор: /chess white или /chess black."), false);
                 return 1;
             }))
             .then(literal("turn").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
@@ -202,30 +210,15 @@ public final class ChessCommands {
 
     private static int joinTeam(ServerCommandSource source, String name) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayerEntity player = source.getPlayerOrThrow();
-        ChessGameManager.BoardState state = ChessGameManager.board(source.getWorld());
-        Scoreboard scoreboard = source.getServer().getScoreboard();
-        Team team = ensureTeam(scoreboard, name, name.equals("white") ? Formatting.WHITE : Formatting.DARK_GRAY);
-        if (state.matchMode == ChessGameManager.MatchMode.ONE_VS_BOT && name.equals("black")) {
-            source.sendError(Text.literal("В режиме 1_vs_bot команда black занята компьютерным соперником. Присоединяйся к white."));
-            return 0;
-        }
-        int limit = state.matchMode == ChessGameManager.MatchMode.TWO_TWO ? 2 : 1;
-        boolean alreadyMember = team.getPlayerList().contains(player.getEntityName());
-        if (!alreadyMember && team.getPlayerList().size() >= limit) {
-            source.sendError(Text.literal("Команда " + name + " заполнена для режима " + (limit == 1 ? "1v1" : "2v2") + "."));
-            return 0;
-        }
-        scoreboard.addPlayerToTeam(player.getEntityName(), team);
-        ChessGameManager.giveTeamPieces(player, name.equals("white"));
-        source.sendFeedback(() -> Text.literal("Вы присоединились к команде " + name + "."), false);
-        return 1;
+        return ChessGameManager.selectTeam(player, name) ? 1 : 0;
     }
 
     private static Team ensureTeam(Scoreboard scoreboard, String name, Formatting color) {
         Team team = scoreboard.getTeam(name);
         if (team == null) team = scoreboard.addTeam(name);
-        team.setDisplayName(Text.literal(name));
-        team.setColor(color);
+        Formatting sideColor = name.equals("white") ? Formatting.WHITE : Formatting.DARK_GRAY;
+        team.setDisplayName(Text.literal(name.equals("white") ? "Белые" : "Чёрные").formatted(sideColor));
+        team.setColor(sideColor);
         team.setFriendlyFireAllowed(false);
         return team;
     }

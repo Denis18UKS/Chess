@@ -30,6 +30,12 @@ public class ChessModClient implements ClientModInitializer {
         ChessClientNetwork.registerClient();
         ChessWorldHighlights.register();
         ChessClockHud.register();
+        ChessSpectatorHud.register();
+        KeyBinding spectatorKey = KeyBindingHelper.registerKeyBinding(
+            new KeyBinding("key.chess.spectate", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_O, "category.chess"));
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            while (spectatorKey.wasPressed()) ChessClientNetwork.toggleSpectating();
+        });
         KeyBinding switchTeamKey = KeyBindingHelper.registerKeyBinding(
             new KeyBinding("key.chess.switch_team", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_G, "category.chess"));
         ClientTickEvents.END_CLIENT_TICK.register(client -> {

@@ -66,6 +66,12 @@ public final class ChessClientNetwork {
             });
         });
 
+        ClientPlayNetworking.registerGlobalReceiver(ChessNetwork.SPECTATOR_STATE, (client, handler, buf, responseSender) -> {
+            boolean watching = buf.readBoolean();
+            boolean whiteTurn = buf.readBoolean();
+            client.execute(() -> ChessSpectatorHud.update(watching, whiteTurn));
+        });
+
         ClientPlayNetworking.registerGlobalReceiver(ChessNetwork.CLOCK_STATE, (client, handler, buf, responseSender) -> {
             boolean visible = buf.readBoolean();
             boolean ticking = buf.readBoolean();
@@ -116,6 +122,11 @@ public final class ChessClientNetwork {
         var buf = PacketByteBufs.create();
         buf.writeBlockPos(pos);
         ClientPlayNetworking.send(ChessNetwork.MOVE_3D, buf);
+    }
+
+    public static void toggleSpectating() {
+        if (ClientPlayNetworking.canSend(ChessNetwork.SPECTATE_TOGGLE))
+            ClientPlayNetworking.send(ChessNetwork.SPECTATE_TOGGLE, PacketByteBufs.create());
     }
 
     public static void switchDevTeam() {

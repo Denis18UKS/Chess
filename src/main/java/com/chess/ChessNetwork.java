@@ -25,12 +25,16 @@ public final class ChessNetwork {
     public static final Identifier CLOCK_STATE = ChessMod.id("clock_state");
     public static final Identifier ADMIN_ACTION = ChessMod.id("admin_action");
     public static final Identifier ADMIN_STATE = ChessMod.id("admin_state");
+    public static final Identifier SPECTATE_TOGGLE = ChessMod.id("spectate_toggle");
+    public static final Identifier SPECTATOR_STATE = ChessMod.id("spectator_state");
 
     private ChessNetwork() {}
 
     public static void registerServer() {
         ServerPlayNetworking.registerGlobalReceiver(REQUEST_BOARD, (server, player, handler, buf, responseSender) ->
             server.execute(() -> sendBoard(player)));
+        ServerPlayNetworking.registerGlobalReceiver(SPECTATE_TOGGLE, (server, player, handler, buf, responseSender) ->
+            server.execute(() -> ChessGameManager.toggleSpectating(player)));
         ServerPlayNetworking.registerGlobalReceiver(ADMIN_ACTION, (server, player, handler, buf, responseSender) -> {
             String action = buf.readString(64);
             BlockPos pos = buf.readBlockPos();
@@ -83,6 +87,20 @@ public final class ChessNetwork {
         buf.writeInt(state.matchDurationMinutes);
         buf.writeInt(rule);
         ServerPlayNetworking.send(player, ADMIN_STATE, buf);
+    }
+
+    public static void sendSpectatorState(ServerPlayerEntity player, boolean watching, boolean whiteTurn) {
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeBoolean(watching);
+        buf.writeBoolean(whiteTurn);
+        ServerPlayNetworking.send(player, SPECTATOR_STATE, buf);
+    }
+
+    public static void broadcastSpectatorState(ServerWorld world, ChessGameManager.BoardState state) {
+        for (java.util.UUID uuid : new java.util.HashSet<>(state.observers)) {
+            ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(uuid);
+            if (player != null) sendSpectatorState(player, state.running, state.whiteTurn);
+        }
     }
 
     public static void sendBoard(ServerPlayerEntity player) {

@@ -24,6 +24,9 @@ public final class ChessWorldConfig extends PersistentState {
     private final Map<String, String> blockCommands = new HashMap<>();
     private final Map<String, TriggerZone> zones = new HashMap<>();
     private final Set<UUID> seenPlayers = new HashSet<>();
+    // Pre-match side selections are not Minecraft scoreboard teams. Those are only
+    // assigned after a validated countdown finishes and a match actually starts.
+    private final Map<UUID, String> selectedTeams = new HashMap<>();
     private String zoneCornerDimension = "";
     private BlockPos zoneCorner = BlockPos.ORIGIN;
     private int lobbyDelaySeconds = 20;
@@ -76,6 +79,31 @@ public final class ChessWorldConfig extends PersistentState {
     }
 
     public boolean hasSeenPlayer(UUID uuid) { return seenPlayers.contains(uuid); }
+
+    public String getSelectedTeam(UUID uuid) {
+        return selectedTeams.get(uuid);
+    }
+
+    public Map<UUID, String> getSelectedTeams() {
+        return new HashMap<>(selectedTeams);
+    }
+
+    public void setSelectedTeam(UUID uuid, String team) {
+        if (uuid == null || !("white".equals(team) || "black".equals(team))) return;
+        selectedTeams.put(uuid, team);
+        markDirty();
+    }
+
+    public void clearSelectedTeam(UUID uuid) {
+        if (selectedTeams.remove(uuid) != null) markDirty();
+    }
+
+    public void clearSelectedTeams() {
+        if (!selectedTeams.isEmpty()) {
+            selectedTeams.clear();
+            markDirty();
+        }
+    }
 
     public void bindBlock(ServerWorld world, BlockPos pos, String command) {
         String key = blockKey(world, pos);
@@ -158,6 +186,15 @@ public final class ChessWorldConfig extends PersistentState {
         NbtList playerList = new NbtList();
         for (UUID uuid : seenPlayers) playerList.add(NbtString.of(uuid.toString()));
         nbt.put("seenPlayers", playerList);
+
+        NbtList selectedTeamList = new NbtList();
+        for (Map.Entry<UUID, String> entry : selectedTeams.entrySet()) {
+            NbtCompound item = new NbtCompound();
+            item.putString("uuid", entry.getKey().toString());
+            item.putString("team", entry.getValue());
+            selectedTeamList.add(item);
+        }
+        nbt.put("selectedTeams", selectedTeamList);
         nbt.putString("zoneCornerDimension", zoneCornerDimension);
         nbt.putLong("zoneCorner", zoneCorner.asLong());
         nbt.putInt("lobbyDelaySeconds", lobbyDelaySeconds);
@@ -192,6 +229,15 @@ public final class ChessWorldConfig extends PersistentState {
         for (int i = 0; i < playerList.size(); i++) {
             try { config.seenPlayers.add(UUID.fromString(playerList.getString(i))); }
             catch (IllegalArgumentException ignored) {}
+        }
+        NbtList selectedTeamList = nbt.getList("selectedTeams", NbtElement.COMPOUND_TYPE);
+        for (int i = 0; i < selectedTeamList.size(); i++) {
+            NbtCompound item = selectedTeamList.getCompound(i);
+            try {
+                UUID uuid = UUID.fromString(item.getString("uuid"));
+                String team = item.getString("team");
+                if ("white".equals(team) || "black".equals(team)) config.selectedTeams.put(uuid, team);
+            } catch (IllegalArgumentException ignored) {}
         }
         config.zoneCornerDimension = nbt.getString("zoneCornerDimension");
         config.zoneCorner = BlockPos.fromLong(nbt.getLong("zoneCorner"));

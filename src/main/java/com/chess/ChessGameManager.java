@@ -31,6 +31,8 @@ import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.Registries;
 import net.minecraft.network.packet.s2c.play.PlaySoundS2CPacket;
+import net.minecraft.network.packet.s2c.play.TitleS2CPacket;
+import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.world.GameMode;
 
 /** Server-authoritative chess board and match controller. */
@@ -125,9 +127,59 @@ public final class ChessGameManager {
 
     public static void start(ServerWorld world) {
         BoardState state = board(world);
-        if (!state.configured) throw new IllegalStateException("Сначала привяжите поле предметом Chess Board Configurator.");
-        if (state.running) throw new IllegalStateException("Партия уже запущена. Для новой партии сначала завершите текущую.");
+        if (!state.configured) throw new IllegalStateException("Сначала привяжите шахматное поле конфигуратором.");
+        if (state.running || state.countdownActive) throw new IllegalStateException("Партия уже запущена или готовится к запуску.");
+        boolean anotherMatch = BOARDS.values().stream().anyMatch(other -> other.running || other.countdownActive);
+        if (anotherMatch) throw new IllegalStateException("Другая шахматная партия уже идёт.");
+
+        ChessWorldConfig config = ChessWorldConfig.get(world.getServer());
+        state.matchMode = config.getMatchMode();
+        state.ruleMode = config.getRuleMode();
+        state.matchDurationMinutes = config.getMatchDurationMinutes();
         if (state.matchEnded || boardIsEmpty(world, state)) resetBoard(world);
+
+        List<UUID> selectedWhite = new ArrayList<>();
+        List<UUID> selectedBlack = new ArrayList<>();
+        for (ServerPlayerEntity player : world.getServer().getPlayerManager().getPlayerList()) {
+            String selected = config.getSelectedTeam(player.getUuid());
+            if ("white".equals(selected)) selectedWhite.add(player.getUuid());
+            else if ("black".equals(selected)) selectedBlack.add(player.getUuid());
+        }
+
+        int requiredWhite = state.matchMode == MatchMode.TWO_TWO ? 2 : 1;
+        int requiredBlack = state.matchMode == MatchMode.TWO_TWO ? 2 : state.matchMode == MatchMode.ONE_VS_BOT ? 0 : 1;
+        if (selectedWhite.size() != requiredWhite || selectedBlack.size() != requiredBlack) {
+            throw new IllegalStateException("Недостаточно игроков. Для режима "
+                + (state.matchMode == MatchMode.TWO_TWO ? "2v2 нужны 2 белых и 2 чёрных."
+                    : state.matchMode == MatchMode.ONE_VS_BOT ? "vs_bot нужен 1 игрок, выбравший белых."
+                    : "1v1 нужны 1 белый и 1 чёрный.")
+                + " Выбери сторону через /chess white или /chess black.");
+        }
+
+        state.pendingWhiteParticipants.clear();
+        state.pendingWhiteParticipants.addAll(selectedWhite);
+        state.pendingBlackParticipants.clear();
+        state.pendingBlackParticipants.addAll(selectedBlack);
+        state.participants.clear();
+        state.lastParticipantTeams.clear();
+        state.observers.clear();
+        Set<UUID> playersForMatch = new HashSet<>(selectedWhite);
+        playersForMatch.addAll(selectedBlack);
+        for (ServerPlayerEntity player : world.getServer().getPlayerManager().getPlayerList()) {
+            if (!playersForMatch.contains(player.getUuid())) state.observers.add(player.getUuid());
+        }
+        state.countdownActive = true;
+        state.countdownRemaining = 3;
+        state.countdownNextTick = serverTick(world.getServer()) + 1L;
+        state.returnToLobbyAtTick = -1L;
+        state.matchEnded = false;
+        broadcast(world, "Подготовка партии: 3… 2… 1…");
+    }
+
+    private static void beginMatch(ServerWorld world) {
+        BoardState state = board(world);
+        if (!state.configured) throw new IllegalStateException("Сначала привяжите шахматное поле конфигуратором.");
+        if (state.running) throw new IllegalStateException("Партия уже запущена.");
         ChessWorldConfig config = ChessWorldConfig.get(world.getServer());
         state.matchMode = config.getMatchMode();
         state.ruleMode = config.getRuleMode();
@@ -145,10 +197,13 @@ public final class ChessGameManager {
             ? serverTick(world.getServer()) + state.matchDurationMinutes * 1200L : -1L;
         state.whiteClockTicks = state.blackClockTicks = state.clockMaxTicks();
         state.participants.clear();
-        for (ServerPlayerEntity player : world.getPlayers()) {
+        state.lastParticipantTeams.clear();
+        for (ServerPlayerEntity player : world.getServer().getPlayerManager().getPlayerList()) {
             net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
-            if (team != null && (team.getName().equals("white") || team.getName().equals("black")))
+            if (team != null && (team.getName().equals("white") || team.getName().equals("black"))) {
                 state.participants.add(player.getUuid());
+                state.lastParticipantTeams.put(player.getUuid(), team.getName());
+            }
         }
         autoConfigureCaptures(world, state);
         broadcast(world, state.matchMode == MatchMode.ONE_VS_BOT
@@ -168,7 +223,12 @@ public final class ChessGameManager {
 
     private static void finishMatch(ServerWorld world, String message) {
         BoardState state = board(world);
+        if (!state.running && !state.countdownActive && state.matchEnded) return;
         state.running = false;
+        state.countdownActive = false;
+        state.countdownRemaining = 0;
+        state.pendingWhiteParticipants.clear();
+        state.pendingBlackParticipants.clear();
         state.paused = false;
         state.pausedByDisconnect = false;
         state.pending = null;
@@ -179,19 +239,33 @@ public final class ChessGameManager {
         for (UUID participant : state.participants) DISCONNECTED_DURING_ACTIVE_MATCH.remove(participant);
         state.matchEnded = true;
         state.matchDeadlineAtTick = -1L;
-        int delay = ChessWorldConfig.get(world.getServer()).getLobbyDelaySeconds();
-        state.returnToLobbyAtTick = serverTick(world.getServer()) + delay * 20L;
+        state.returnToLobbyAtTick = -1L;
+        state.botMoveAtTick = -1L;
         updateTurnGlow(world, state);
         syncAllTeamPieces(world.getServer());
         ChessNetwork.broadcastBoard(world);
         ChessNetwork.broadcastClockState(world);
         broadcast(world, message);
-        if (delay == 0) {
-            state.returnToLobbyAtTick = -1L;
-            teleportAllToLobby(world);
-        } else {
-            broadcast(world, "Возврат игроков в лобби запланирован через " + delay + " сек.");
+
+        // End the spectator session first, then return every participant and observer.
+        for (UUID observerId : new HashSet<>(state.observers)) {
+            ServerPlayerEntity observer = world.getServer().getPlayerManager().getPlayer(observerId);
+            if (observer != null) {
+                ChessNetwork.sendSpectatorState(observer, false, state.whiteTurn);
+                observer.changeGameMode(GameMode.ADVENTURE);
+            }
         }
+        teleportAllToLobby(world);
+        clearChessTeams(world.getServer());
+        ChessWorldConfig.get(world.getServer()).clearSelectedTeams();
+        for (ServerPlayerEntity player : world.getServer().getPlayerManager().getPlayerList()) {
+            if (state.observers.contains(player.getUuid())) player.changeGameMode(GameMode.ADVENTURE);
+        }
+        state.observers.clear();
+        state.participants.clear();
+        state.pendingWhiteParticipants.clear();
+        state.pendingBlackParticipants.clear();
+        resetBoard(world);
     }
 
     public static void togglePause(ServerWorld world) {
@@ -283,6 +357,207 @@ public final class ChessGameManager {
         server.getPlayerManager().broadcast(Text.literal("Задержка возврата в лобби установлена: " + value + " сек."), false);
     }
 
+    /** Stores a pre-match side choice without adding the player to a Minecraft scoreboard team. */
+    public static boolean selectTeam(ServerPlayerEntity player, String teamName) {
+        MinecraftServer server = player.getServer();
+        if (server == null) return false;
+        if (!"white".equals(teamName) && !"black".equals(teamName)) return false;
+        if (BOARDS.values().stream().anyMatch(state -> state.running || state.countdownActive)) {
+            player.sendMessage(Text.literal("Нельзя менять сторону во время подготовки или активной партии."), false);
+            return false;
+        }
+        ChessWorldConfig config = ChessWorldConfig.get(server);
+        ChessGameManager.MatchMode mode = config.getMatchMode();
+        if (mode == MatchMode.ONE_VS_BOT && "black".equals(teamName)) {
+            player.sendMessage(Text.literal("В режиме vs_bot чёрными играет бот. Выбери сторону «Белые».").formatted(Formatting.WHITE), false);
+            return false;
+        }
+        int limit = mode == MatchMode.TWO_TWO ? 2 : 1;
+        long occupied = config.getSelectedTeams().entrySet().stream()
+            .filter(entry -> teamName.equals(entry.getValue()) && !entry.getKey().equals(player.getUuid()))
+            .filter(entry -> server.getPlayerManager().getPlayer(entry.getKey()) != null)
+            .count();
+        if (occupied >= limit) {
+            player.sendMessage(Text.literal("Сторона " + (teamName.equals("white") ? "Белые" : "Чёрные")
+                + " уже набрала максимум игроков для этого режима."), false);
+            return false;
+        }
+        config.setSelectedTeam(player.getUuid(), teamName);
+        Formatting color = teamName.equals("white") ? Formatting.WHITE : Formatting.DARK_GRAY;
+        player.sendMessage(Text.literal("Предварительно выбрана сторона: "
+            + (teamName.equals("white") ? "Белые" : "Чёрные")
+            + ". До начала партии ты не состоишь в Minecraft-команде.").formatted(color), false);
+        return true;
+    }
+
+    public static boolean clearTeamSelection(ServerPlayerEntity player) {
+        MinecraftServer server = player.getServer();
+        if (server == null || BOARDS.values().stream().anyMatch(state -> state.running || state.countdownActive)) {
+            player.sendMessage(Text.literal("Нельзя менять выбор команды во время партии."), false);
+            return false;
+        }
+        ChessWorldConfig.get(server).clearSelectedTeam(player.getUuid());
+        clearChessTeam(server, player);
+        player.sendMessage(Text.literal("Предварительный выбор команды сброшен."), false);
+        return true;
+    }
+
+    public static boolean toggleSpectating(ServerPlayerEntity player) {
+        MinecraftServer server = player.getServer();
+        if (server == null) return false;
+        for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
+            BoardState state = entry.getValue();
+            ServerWorld boardWorld = server.getWorld(entry.getKey());
+            if (boardWorld == null || !state.running) continue;
+            if (state.participants.contains(player.getUuid())) {
+                player.sendMessage(Text.literal("Участник партии не может переключиться в режим зрителя."), false);
+                return false;
+            }
+            if (state.observers.remove(player.getUuid())) {
+                ChessNetwork.sendSpectatorState(player, false, state.whiteTurn);
+                player.changeGameMode(GameMode.ADVENTURE);
+                teleportPlayerToLobby(player);
+                player.sendMessage(Text.literal("Ты покинул наблюдение и вернулся в лобби."), false);
+                return true;
+            }
+            state.observers.add(player.getUuid());
+            state.observerOriginalModes.put(player.getUuid(), player.interactionManager.getGameMode());
+            player.changeGameMode(GameMode.SPECTATOR);
+            teleportToSpectator(player, boardWorld, state);
+            ChessNetwork.sendSpectatorState(player, true, state.whiteTurn);
+            player.sendMessage(Text.literal("Режим наблюдения включён. Нажми O ещё раз, чтобы вернуться в лобби."), false);
+            return true;
+        }
+        player.sendMessage(Text.literal("Сейчас нет активной шахматной партии для наблюдения."), false);
+        return false;
+    }
+
+    private static void teleportToSpectator(ServerPlayerEntity player, ServerWorld boardWorld, BoardState state) {
+        ChessWorldConfig.SavedPos target = ChessWorldConfig.get(player.getServer()).getLocation("spectator");
+        if (target != null) {
+            ServerWorld destination = resolveWorld(player.getServer(), target.dimension);
+            if (destination != null) {
+                player.teleport(destination, target.pos.getX() + 0.5, target.pos.getY() + 1.0,
+                    target.pos.getZ() + 0.5, player.getYaw(), player.getPitch());
+                return;
+            }
+        }
+        player.teleport(boardWorld, state.origin.getX() + 4.5, state.origin.getY() + 5.0,
+            state.origin.getZ() - 3.5, 0.0f, 25.0f);
+    }
+
+    private static void processStartCountdowns(MinecraftServer server, long tick) {
+        for (Map.Entry<RegistryKey<World>, BoardState> entry : new ArrayList<>(BOARDS.entrySet())) {
+            BoardState state = entry.getValue();
+            if (!state.countdownActive || tick < state.countdownNextTick) continue;
+            ServerWorld world = server.getWorld(entry.getKey());
+            if (world == null) continue;
+            boolean rosterOnline = state.pendingWhiteParticipants.stream().allMatch(id -> server.getPlayerManager().getPlayer(id) != null)
+                && state.pendingBlackParticipants.stream().allMatch(id -> server.getPlayerManager().getPlayer(id) != null);
+            if (!rosterOnline) {
+                state.countdownActive = false;
+                state.pendingWhiteParticipants.clear();
+                state.pendingBlackParticipants.clear();
+                state.observers.clear();
+                showServerTitle(server, "Недостаточно игроков");
+                broadcast(world, "Недостаточно игроков. Запуск партии отменён.");
+                continue;
+            }
+            if (state.countdownRemaining > 0) {
+                showServerTitle(server, Integer.toString(state.countdownRemaining));
+                state.countdownRemaining--;
+                state.countdownNextTick = tick + 20L;
+                continue;
+            }
+
+            state.countdownActive = false;
+            Scoreboard scoreboard = server.getScoreboard();
+            Team white = ensureChessTeam(scoreboard, "white");
+            Team black = ensureChessTeam(scoreboard, "black");
+            for (UUID id : state.pendingWhiteParticipants) {
+                ServerPlayerEntity selected = server.getPlayerManager().getPlayer(id);
+                if (selected != null) {
+                    clearChessTeam(server, selected);
+                    scoreboard.addPlayerToTeam(selected.getEntityName(), white);
+                }
+            }
+            for (UUID id : state.pendingBlackParticipants) {
+                ServerPlayerEntity selected = server.getPlayerManager().getPlayer(id);
+                if (selected != null) {
+                    clearChessTeam(server, selected);
+                    scoreboard.addPlayerToTeam(selected.getEntityName(), black);
+                }
+            }
+
+            // Everyone who was already online but did not join the roster is forced into
+            // observing. Players who join later stay in the lobby until they opt in.
+            for (UUID id : new HashSet<>(state.observers)) {
+                ServerPlayerEntity observer = server.getPlayerManager().getPlayer(id);
+                if (observer == null) continue;
+                state.observerOriginalModes.put(id, observer.interactionManager.getGameMode());
+                observer.changeGameMode(GameMode.SPECTATOR);
+                teleportToSpectator(observer, world, state);
+            }
+            if (!teleportTeamToConfiguredTarget(world, true)) teleportRosterToBoard(world, state, state.pendingWhiteParticipants, true);
+            if (state.matchMode == MatchMode.TWO_TWO && !teleportTeamToConfiguredTarget(world, false))
+                teleportRosterToBoard(world, state, state.pendingBlackParticipants, false);
+
+            beginMatch(world);
+            for (UUID id : new HashSet<>(state.observers)) {
+                ServerPlayerEntity observer = server.getPlayerManager().getPlayer(id);
+                if (observer != null) ChessNetwork.sendSpectatorState(observer, true, state.whiteTurn);
+            }
+            ChessWorldConfig.get(server).clearSelectedTeams();
+            state.pendingWhiteParticipants.clear();
+            state.pendingBlackParticipants.clear();
+        }
+    }
+
+    private static void teleportRosterToBoard(ServerWorld world, BoardState state, Set<UUID> ids, boolean white) {
+        int index = 0;
+        for (UUID id : ids) {
+            ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(id);
+            if (player == null) continue;
+            double z = state.origin.getZ() + (white ? -2.5 : 10.5);
+            player.teleport(world, state.origin.getX() + 0.5 + index++, state.origin.getY() + 2.0,
+                z, white ? 180.0f : 0.0f, 0.0f);
+        }
+    }
+
+    private static void showServerTitle(MinecraftServer server, String message) {
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            player.networkHandler.sendPacket(new TitleS2CPacket(TitleS2CPacket.Action.TITLE, Text.literal(message)));
+        }
+    }
+
+    private static Team ensureChessTeam(Scoreboard scoreboard, String name) {
+        Team team = scoreboard.getTeam(name);
+        if (team == null) team = scoreboard.addTeam(name);
+        Formatting color = "white".equals(name) ? Formatting.WHITE : Formatting.DARK_GRAY;
+        team.setDisplayName(Text.literal("white".equals(name) ? "Белые" : "Чёрные").formatted(color));
+        team.setColor(color);
+        team.setFriendlyFireAllowed(false);
+        return team;
+    }
+
+    private static void clearChessTeam(MinecraftServer server, ServerPlayerEntity player) {
+        var team = player.getScoreboardTeam();
+        if (team != null && ("white".equals(team.getName()) || "black".equals(team.getName())))
+            server.getScoreboard().clearPlayerTeam(player.getEntityName());
+    }
+
+    private static void clearChessTeams(MinecraftServer server) {
+        Scoreboard scoreboard = server.getScoreboard();
+        for (String name : new String[] {"white", "black"}) {
+            Team team = scoreboard.getTeam(name);
+            if (team == null) continue;
+            for (String member : new ArrayList<>(team.getPlayerList())) scoreboard.clearPlayerTeam(member);
+            team.setDisplayName(Text.literal(name.equals("white") ? "Белые" : "Чёрные")
+                .formatted(name.equals("white") ? Formatting.WHITE : Formatting.DARK_GRAY));
+            team.setColor(name.equals("white") ? Formatting.WHITE : Formatting.DARK_GRAY);
+        }
+    }
+
     public static void handlePlayerJoin(ServerPlayerEntity player) {
         MinecraftServer server = player.getServer();
         if (server == null) return;
@@ -291,11 +566,13 @@ public final class ChessGameManager {
         config.rememberPlayer(player.getUuid());
 
         boolean anyActiveMatch = BOARDS.values().stream().anyMatch(s -> s.running);
-        if (!anyActiveMatch || !returningDuringGame) {
+        boolean anyCountdown = BOARDS.values().stream().anyMatch(s -> s.countdownActive);
+        if (!returningDuringGame || (!anyActiveMatch && !anyCountdown)) {
+            clearChessTeam(server, player);
+            if (!anyActiveMatch && !anyCountdown) config.clearSelectedTeam(player.getUuid());
             teleportPlayerToLobby(player);
+            if (anyActiveMatch) player.sendMessage(Text.literal("Партия уже идёт. Нажми O или используй /chess spectate, чтобы смотреть игру."), false);
         } else {
-            // Rejoining mid-match: restore the previous position, and resume only if this
-            // UUID was the player whose disconnect triggered the automatic pause.
             for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
                 BoardState state = entry.getValue();
                 if (!state.pausedByDisconnect) continue;
@@ -326,39 +603,37 @@ public final class ChessGameManager {
         if (server == null) return;
         boolean someMatchActive = BOARDS.values().stream().anyMatch(state -> state.running);
         if (someMatchActive) {
-            // Preserve this player's saved position on rejoin even if they were in the lobby
-            // dimension. Automatic pause remains limited to registered match participants.
             DISCONNECTED_DURING_ACTIVE_MATCH.add(player.getUuid());
+        } else {
+            ChessWorldConfig.get(server).clearSelectedTeam(player.getUuid());
+            clearChessTeam(server, player);
         }
         for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
             BoardState state = entry.getValue();
             ServerWorld world = server.getWorld(entry.getKey());
             if (world == null || !state.running || !state.participants.contains(player.getUuid())) continue;
             if (state.paused) continue;
-            net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
-            if (team == null || !(team.getName().equals("white") || team.getName().equals("black"))) continue;
+            String teamName = state.lastParticipantTeams.get(player.getUuid());
+            if (!"white".equals(teamName) && !"black".equals(teamName)) continue;
 
             boolean shouldPause = false;
             if (state.matchMode == MatchMode.ONE_ONE) {
-                // The disconnect of either human participant pauses a 1v1 match.
                 shouldPause = true;
             } else if (state.matchMode == MatchMode.ONE_VS_BOT) {
-                // Black is the computer-controlled side and never causes an auto-pause.
-                shouldPause = team.getName().equals("white");
+                shouldPause = "white".equals(teamName);
             } else if (state.matchMode == MatchMode.TWO_TWO) {
-                // In 2v2 pause only when the whole team is offline.
                 boolean anyTeamMateOnline = server.getPlayerManager().getPlayerList().stream()
                     .anyMatch(other -> !other.getUuid().equals(player.getUuid())
                         && state.participants.contains(other.getUuid())
-                        && team.getPlayerList().contains(other.getEntityName()));
+                        && teamName.equals(state.lastParticipantTeams.get(other.getUuid())));
                 shouldPause = !anyTeamMateOnline;
             }
             if (!shouldPause) continue;
             state.paused = true;
             state.pausedByDisconnect = true;
             state.disconnectedPlayerId = player.getUuid();
-            state.disconnectedTeamName = team.getName();
-            broadcast(world, "Пауза: игрок команды " + team.getName()
+            state.disconnectedTeamName = teamName;
+            broadcast(world, "Пауза: игрок команды " + (teamName.equals("white") ? "Белые" : "Чёрные")
                 + " отключился. Игра продолжится автоматически после его возвращения.");
             updateTurnGlow(world, state);
             ChessNetwork.broadcastClockState(world);
@@ -439,6 +714,7 @@ public final class ChessGameManager {
         // Return every online match participant even if they were moved to a separate
         // dimension by a configured team TP. Also return observers who stayed at the board.
         Set<UUID> returnIds = new HashSet<>(board(sourceWorld).participants);
+        returnIds.addAll(board(sourceWorld).observers);
         for (ServerPlayerEntity player : sourceWorld.getPlayers()) returnIds.add(player.getUuid());
         List<ServerPlayerEntity> players = server.getPlayerManager().getPlayerList().stream()
             .filter(player -> returnIds.contains(player.getUuid())).toList();
@@ -449,7 +725,11 @@ public final class ChessGameManager {
                 player.getYaw(), player.getPitch());
         }
         spreadTaggedPlayers(server, destination, lobby.pos, tag, Math.max(8, players.size() * 3));
-        players.forEach(p -> p.getCommandTags().remove(tag));
+        players.forEach(p -> {
+            p.getCommandTags().remove(tag);
+            p.changeGameMode(GameMode.ADVENTURE);
+            ChessNetwork.sendSpectatorState(p, false, board(sourceWorld).whiteTurn);
+        });
     }
 
     private static void updateTurnGlow(ServerWorld world, BoardState state) {
@@ -554,6 +834,10 @@ public final class ChessGameManager {
         state.whiteCapturedPieces.clear();
         state.blackCapturedPieces.clear();
         state.selected3DPieces.clear();
+        state.countdownActive = false;
+        state.countdownRemaining = 0;
+        state.pendingWhiteParticipants.clear();
+        state.pendingBlackParticipants.clear();
         updateTurnGlow(world, state);
 
         String blackBack = "rnbqkbnr";
@@ -1072,6 +1356,11 @@ public final class ChessGameManager {
         }
         if (tick % 20L == 0L) syncAllTeamPieces(server);
         if (tick % 5L == 0L) processTriggerZones(server);
+        processStartCountdowns(server, tick);
+        boolean anyMatchActive = BOARDS.values().stream().anyMatch(board -> board.running);
+        if (!anyMatchActive && BOARDS.values().stream().noneMatch(board -> board.countdownActive)) {
+            for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) clearChessTeam(server, player);
+        }
 
         for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
             ServerWorld world = server.getWorld(entry.getKey());
@@ -1306,10 +1595,10 @@ public final class ChessGameManager {
      * normal world broadcast and may not hear their own check/mate/result notification.
      */
     private static void notifyCheckTeam(ServerWorld world, boolean white, String message, net.minecraft.sound.SoundEvent sound) {
-        for (ServerPlayerEntity player : world.getPlayers()) {
-            net.minecraft.scoreboard.AbstractTeam team = player.getScoreboardTeam();
-            if (team == null || !(team.getName().equals("white") || team.getName().equals("black"))) continue;
-            if (white != team.getName().equals("white")) continue;
+        BoardState state = board(world);
+        for (ServerPlayerEntity player : world.getServer().getPlayerManager().getPlayerList()) {
+            String teamName = state.lastParticipantTeams.get(player.getUuid());
+            if (teamName == null || white != teamName.equals("white")) continue;
             player.sendMessage(Text.literal(message).formatted(
                 message.contains("МАТ") ? Formatting.DARK_RED : Formatting.RED, Formatting.BOLD), true);
             playSoundToPlayer(player, sound, 0.9f, message.contains("ШАХ") ? 1.1f : 1.0f);
@@ -1327,14 +1616,14 @@ public final class ChessGameManager {
     }
 
     private static void announceTurn(ServerWorld world, BoardState state) {
-        broadcast(world, "Ход команды " + (state.whiteTurn ? "white" : "black") + ".");
+        broadcast(world, "Ход " + (state.whiteTurn ? "белых" : "чёрных") + ".");
+        ChessNetwork.broadcastSpectatorState(world, state);
     }
 
     private static void updateTeamHighlights(MinecraftServer server, BoardState state) {
-        Team white = server.getScoreboard().getTeam("white");
-        Team black = server.getScoreboard().getTeam("black");
-        if (white != null) white.setColor(state.whiteTurn ? Formatting.GOLD : Formatting.WHITE);
-        if (black != null) black.setColor(state.whiteTurn ? Formatting.WHITE : Formatting.GOLD);
+        Scoreboard scoreboard = server.getScoreboard();
+        ensureChessTeam(scoreboard, "white");
+        ensureChessTeam(scoreboard, "black");
     }
 
     private static void broadcast(ServerWorld world, String message) {
@@ -1357,6 +1646,14 @@ public final class ChessGameManager {
         public UUID disconnectedPlayerId;
         public String disconnectedTeamName = "";
         public boolean matchEnded;
+        public boolean countdownActive;
+        public int countdownRemaining;
+        public long countdownNextTick = -1L;
+        public final Set<UUID> pendingWhiteParticipants = new HashSet<>();
+        public final Set<UUID> pendingBlackParticipants = new HashSet<>();
+        public final Set<UUID> observers = new HashSet<>();
+        public final Map<UUID, GameMode> observerOriginalModes = new HashMap<>();
+        public final Map<UUID, String> lastParticipantTeams = new HashMap<>();
         public long returnToLobbyAtTick = -1L;
         public long matchDeadlineAtTick = -1L;
         public long botMoveAtTick = -1L;
