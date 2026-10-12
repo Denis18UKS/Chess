@@ -29,7 +29,10 @@ public final class ChessWorldConfig extends PersistentState {
     private final Map<UUID, String> selectedTeams = new HashMap<>();
     private String zoneCornerDimension = "";
     private BlockPos zoneCorner = BlockPos.ORIGIN;
-    private int lobbyDelaySeconds = 20;
+    private String zoneCornerName = "";
+    private int fadeDurationTicks = 10;
+    private int teleportDelayTicks = 14;
+    private int lobbyDelaySeconds = 0;
     private int matchDurationMinutes = 0;
     private ChessGameManager.MatchMode matchMode = ChessGameManager.MatchMode.ONE_ONE;
     private ChessGameManager.RuleMode ruleMode = ChessGameManager.RuleMode.REALISM;
@@ -44,6 +47,25 @@ public final class ChessWorldConfig extends PersistentState {
     public void setLocation(String name, ServerWorld world, BlockPos pos) {
         locations.put(name, new SavedPos(world.getRegistryKey().getValue().toString(), pos.toImmutable()));
         markDirty();
+    }
+
+    public int getFadeDurationTicks() { return fadeDurationTicks; }
+
+    public void setFadeDurationTicks(int ticks) {
+        fadeDurationTicks = Math.max(2, Math.min(100, ticks));
+        markDirty();
+    }
+
+    public int getTeleportDelayTicks() { return teleportDelayTicks; }
+
+    public void setTeleportDelayTicks(int ticks) {
+        teleportDelayTicks = Math.max(0, Math.min(200, ticks));
+        markDirty();
+    }
+
+    /** A transition may not teleport before the screen has fully faded to black. */
+    public int getEffectiveTeleportDelayTicks() {
+        return Math.max(fadeDurationTicks, teleportDelayTicks);
     }
 
     public int getLobbyDelaySeconds() { return lobbyDelaySeconds; }
@@ -123,8 +145,13 @@ public final class ChessWorldConfig extends PersistentState {
     }
 
     public void saveZoneCorner(ServerWorld world, BlockPos pos) {
+        saveZoneCorner(world, pos, "");
+    }
+
+    public void saveZoneCorner(ServerWorld world, BlockPos pos, String zoneName) {
         zoneCornerDimension = world.getRegistryKey().getValue().toString();
         zoneCorner = pos.toImmutable();
+        zoneCornerName = zoneName == null ? "" : zoneName.trim();
         markDirty();
     }
 
@@ -134,10 +161,13 @@ public final class ChessWorldConfig extends PersistentState {
         if (!hasZoneCorner()) throw new IllegalStateException("Сначала назначьте угол A зоны.");
         if (!zoneCornerDimension.equals(world.getRegistryKey().getValue().toString()))
             throw new IllegalStateException("Оба угла триггер-зоны должны быть в одном измерении.");
-        String id = name == null || name.isBlank() ? "zone_" + zones.size() : name.trim();
+        String requested = name == null ? "" : name.trim();
+        String id = !requested.isBlank() ? requested
+            : !zoneCornerName.isBlank() ? zoneCornerName : "zone_" + zones.size();
         zones.put(id, new TriggerZone(id, zoneCornerDimension, zoneCorner, otherCorner.toImmutable(),
             cleanCommand(enter), cleanCommand(leave)));
         zoneCornerDimension = "";
+        zoneCornerName = "";
         zoneCorner = BlockPos.ORIGIN;
         markDirty();
     }
@@ -197,6 +227,9 @@ public final class ChessWorldConfig extends PersistentState {
         nbt.put("selectedTeams", selectedTeamList);
         nbt.putString("zoneCornerDimension", zoneCornerDimension);
         nbt.putLong("zoneCorner", zoneCorner.asLong());
+        nbt.putString("zoneCornerName", zoneCornerName);
+        nbt.putInt("fadeDurationTicks", fadeDurationTicks);
+        nbt.putInt("teleportDelayTicks", teleportDelayTicks);
         nbt.putInt("lobbyDelaySeconds", lobbyDelaySeconds);
         nbt.putInt("matchDurationMinutes", matchDurationMinutes);
         nbt.putString("matchMode", matchMode.name());
@@ -241,6 +274,9 @@ public final class ChessWorldConfig extends PersistentState {
         }
         config.zoneCornerDimension = nbt.getString("zoneCornerDimension");
         config.zoneCorner = BlockPos.fromLong(nbt.getLong("zoneCorner"));
+        config.zoneCornerName = nbt.getString("zoneCornerName");
+        if (nbt.contains("fadeDurationTicks")) config.fadeDurationTicks = Math.max(2, Math.min(100, nbt.getInt("fadeDurationTicks")));
+        if (nbt.contains("teleportDelayTicks")) config.teleportDelayTicks = Math.max(0, Math.min(200, nbt.getInt("teleportDelayTicks")));
         if (nbt.contains("lobbyDelaySeconds")) config.lobbyDelaySeconds = Math.max(0, Math.min(3600, nbt.getInt("lobbyDelaySeconds")));
         if (nbt.contains("matchDurationMinutes")) config.matchDurationMinutes = Math.max(0, Math.min(1440, nbt.getInt("matchDurationMinutes")));
         try { config.matchMode = ChessGameManager.MatchMode.valueOf(nbt.getString("matchMode")); }
