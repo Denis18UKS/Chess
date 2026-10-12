@@ -65,6 +65,16 @@ public class ChessModClient implements ClientModInitializer {
                 client.setScreen(new ChessConfiguratorScreen(client.currentScreen, hit.getBlockPos()));
                 return ActionResult.SUCCESS;
             }
+            if (world.isClient && stack.isOf(ModItems.CHESS_ZONE_TOOL)) {
+                MinecraftClient client = MinecraftClient.getInstance();
+                client.setScreen(new ChessTriggerZoneConfiguratorScreen(client.currentScreen, hit.getBlockPos()));
+                return ActionResult.SUCCESS;
+            }
+            if (world.isClient && stack.isOf(ModItems.CHESS_LOBBY_TOOL)) {
+                MinecraftClient client = MinecraftClient.getInstance();
+                client.setScreen(new ChessLobbyConfiguratorScreen(client.currentScreen, hit.getBlockPos()));
+                return ActionResult.SUCCESS;
+            }
             if (world.isClient && world.getBlockState(hit.getBlockPos()).isOf(ModBlocks.CHESS_SETTINGS_PANEL)) {
                 return ChessPanelWorldRenderer.handleClick(world, hit)
                     ? ActionResult.SUCCESS : ActionResult.PASS;
@@ -126,6 +136,21 @@ public class ChessModClient implements ClientModInitializer {
                     new ChessFadeConfiguratorScreen(MinecraftClient.getInstance().currentScreen, player.getBlockPos()));
                 return TypedActionResult.success(initialStack);
             }
+            if (initialStack.isOf(ModItems.CHESS_CONFIG_TOOL)) {
+                if (world.isClient) MinecraftClient.getInstance().setScreen(
+                    new ChessConfiguratorScreen(MinecraftClient.getInstance().currentScreen, player.getBlockPos()));
+                return TypedActionResult.success(initialStack);
+            }
+            if (initialStack.isOf(ModItems.CHESS_ZONE_TOOL)) {
+                if (world.isClient) MinecraftClient.getInstance().setScreen(
+                    new ChessTriggerZoneConfiguratorScreen(MinecraftClient.getInstance().currentScreen, player.getBlockPos()));
+                return TypedActionResult.success(initialStack);
+            }
+            if (initialStack.isOf(ModItems.CHESS_LOBBY_TOOL)) {
+                if (world.isClient) MinecraftClient.getInstance().setScreen(
+                    new ChessLobbyConfiguratorScreen(MinecraftClient.getInstance().currentScreen, player.getBlockPos()));
+                return TypedActionResult.success(initialStack);
+            }
             var stack = player.getStackInHand(hand);
             if (!player.isSneaking() && ModBlocks.isFigureItem(stack)) {
                 if (world.isClient && ChessClientNetwork.threeDimensional) return TypedActionResult.pass(stack);
@@ -157,9 +182,10 @@ public class ChessModClient implements ClientModInitializer {
                 if (ChessBoardScreen.cellAt(row, col) == '.') continue;
                 BlockPos piecePos = origin.add(col, 1, row);
                 if (com.chess.ChessPieceType.fromBlock(world.getBlockState(piecePos)) == null) continue;
-                // This AABB follows the model from the 2px board surface to its crown/top.
-                Box modelBounds = new Box(piecePos.getX() + 0.06, piecePos.getY() - 0.875, piecePos.getZ() + 0.06,
-                    piecePos.getX() + 0.94, piecePos.getY() + 0.95, piecePos.getZ() + 0.94);
+                // Models are about 6px wide and at most 16px tall, offset 14/16 block below
+                // the logical block. Never raycast the old oversized cube above the piece.
+                Box modelBounds = new Box(piecePos.getX() + 0.25, piecePos.getY() - 0.875, piecePos.getZ() + 0.25,
+                    piecePos.getX() + 0.75, piecePos.getY() + 0.125, piecePos.getZ() + 0.75);
                 var intercept = modelBounds.raycast(start, end);
                 if (intercept.isEmpty()) continue;
                 double distance = intercept.get().squaredDistanceTo(start);

@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.HashSet;
 import java.util.Set;
 
-/** Renders and handles clickable controls on the actual 3x3 panel blocks in the world. */
+/** World-mounted wooden chess control board. Every label is rendered without text backgrounds. */
 public final class ChessPanelWorldRenderer {
     private static int modeIndex;
     private static long lastScanTick = Long.MIN_VALUE;
@@ -84,31 +84,25 @@ public final class ChessPanelWorldRenderer {
 
         String action = null;
         int value = 0;
-        if (v >= 40 && v <= 76) {
-            if (u >= 8 && u <= 184) {
-                int slot = u < 64 ? 0 : u < 128 ? 1 : 2;
-                action = "panel_mode";
-                value = slot;
-                modeIndex = slot;
-            }
-        } else if (v >= 83 && v <= 118) {
-            if (u >= 8 && u <= 92) action = "select_white";
-            else if (u >= 100 && u <= 184) action = "select_black";
-        } else if (v >= 133 && v <= 170) {
-            if (u >= 10 && u <= 88) action = "clear_selection";
-            else if (u >= 104 && u <= 182) action = "panel_start";
+        if (v >= 42 && v <= 82 && u >= 6 && u <= 186) {
+            value = u < 64 ? 0 : u < 128 ? 1 : 2;
+            action = "panel_mode";
+            modeIndex = value;
+        } else if (v >= 104 && v <= 145 && u >= 24 && u <= 168) {
+            // Side is deliberately not chosen here: players select it by entering trigger zones.
+            action = "panel_start";
         }
         if (action == null) return true;
         sendAction(action, anchor, value);
         return true;
     }
 
-    private static void sendAction(String action, BlockPos anchor, int v1) {
+    private static void sendAction(String action, BlockPos anchor, int value) {
         var buf = PacketByteBufs.create();
         buf.writeString(action, 64);
         buf.writeBlockPos(anchor);
         buf.writeString("", 1024); buf.writeString("", 1024); buf.writeString("", 1024);
-        buf.writeInt(v1); buf.writeInt(0); buf.writeInt(0);
+        buf.writeInt(value); buf.writeInt(0); buf.writeInt(0);
         ClientPlayNetworking.send(ChessNetwork.ADMIN_ACTION, buf);
     }
 
@@ -165,13 +159,11 @@ public final class ChessPanelWorldRenderer {
         buffers.draw();
     }
 
-    private static void renderOne(WorldRenderContext context, TextRenderer textRenderer,
+    private static void renderOne(WorldRenderContext context, TextRenderer renderer,
                                   VertexConsumerProvider.Immediate buffers, BlockPos anchor, Direction facing) {
         Vec3d camera = context.camera().getPos();
         MatrixStack matrices = context.matrixStack();
         matrices.push();
-        // The panel anchor is the bottom-centre block. Keep the text a few millimetres in front
-        // of its visible face to avoid z-fighting with the block surface.
         matrices.translate(anchor.getX() + 0.5 - camera.x, anchor.getY() + 3.0 - camera.y,
             anchor.getZ() + 0.5 - camera.z);
         double angle = switch (facing) {
@@ -186,38 +178,28 @@ public final class ChessPanelWorldRenderer {
         matrices.scale((float) PIXEL_SCALE, (float) -PIXEL_SCALE, (float) PIXEL_SCALE);
         Matrix4f matrix = matrices.peek().getPositionMatrix();
 
-        drawCentered(textRenderer, buffers, matrix, "ШАХМАТЫ", 13, 0xFF202020);
-        drawCentered(textRenderer, buffers, matrix, "РЕЖИМ ПАРТИИ", 34, 0xFF202020);
-        String[] modes = {"1v1", "2v2", "vs_bot"};
-        int[] centers = {36, 96, 156};
+        // Inspired by the supplied wooden scoreboard: simple gold headings and clean text.
+        // No repeated block-glyph bars and no per-line translucent rectangles.
+        drawCentered(renderer, buffers, matrix, "ШАХМАТЫ", 96, 18, 0xFFFFB52E);
+        drawCentered(renderer, buffers, matrix, "РЕЖИМ ПАРТИИ", 96, 42, 0xFFFFD16A);
+        String[] modes = {"1v1", "2v2", "С БОТОМ"};
+        int[] centers = {32, 96, 160};
         for (int i = 0; i < modes.length; i++) {
-            drawCentered(textRenderer, buffers, matrix, "█████████", centers[i], 46,
-                i == modeIndex ? 0xFF235A37 : 0xFF383838);
-            int color = i == modeIndex ? 0xFFFFFFFF : 0xFFE2E2E2;
-            drawCentered(textRenderer, buffers, matrix, (i == modeIndex ? "▶ " : "") + modes[i], centers[i], 51, color);
+            boolean selected = i == modeIndex;
+            String label = selected ? "[ " + modes[i] + " ]" : modes[i];
+            drawCentered(renderer, buffers, matrix, label, centers[i], 62,
+                selected ? 0xFFFFB52E : 0xFFF4E7C6);
         }
-        drawCentered(textRenderer, buffers, matrix, "ВЫБОР СТОРОНЫ", 80, 0xFF202020);
-        drawCentered(textRenderer, buffers, matrix, "█████████████", 49, 90, 0xFF383838);
-        drawCentered(textRenderer, buffers, matrix, "█████████████", 139, 90, 0xFF383838);
-        drawCentered(textRenderer, buffers, matrix, "[ БЕЛЫЕ ]", 49, 96, 0xFFFFFFFF);
-        drawCentered(textRenderer, buffers, matrix, "[ ЧЁРНЫЕ ]", 139, 96, 0xFFE0E0E0);
-        drawCentered(textRenderer, buffers, matrix, "██████████████", 50, 139, 0xFF383838);
-        drawCentered(textRenderer, buffers, matrix, "██████████████", 142, 139, 0xFF235A37);
-        drawCentered(textRenderer, buffers, matrix, "[ СНЯТЬ ВЫБОР ]", 50, 145, 0xFFE0E0E0);
-        drawCentered(textRenderer, buffers, matrix, "[ ▶ НАЧАТЬ ]", 142, 145, 0xFFFFFFFF);
-        drawCentered(textRenderer, buffers, matrix, "3 • 2 • 1  →  ИГРА", 96, 174, 0xFF202020);
+        drawCentered(renderer, buffers, matrix, "НАЧАТЬ ПАРТИЮ", 96, 121, 0xFFFFD16A);
+        drawCentered(renderer, buffers, matrix, "СТОРОНА — ЧЕРЕЗ ЗОНУ", 96, 158, 0xFFF4E7C6);
+        drawCentered(renderer, buffers, matrix, "3 • 2 • 1  →  ИГРА", 96, 178, 0xFFFFB52E);
         matrices.pop();
-    }
-
-    private static void drawCentered(TextRenderer renderer, VertexConsumerProvider consumers,
-                                     Matrix4f matrix, String text, int y, int color) {
-        drawCentered(renderer, consumers, matrix, text, 96, y, color);
     }
 
     private static void drawCentered(TextRenderer renderer, VertexConsumerProvider consumers,
                                      Matrix4f matrix, String text, int centerX, int y, int color) {
         int x = centerX - renderer.getWidth(text) / 2;
         renderer.draw(Text.literal(text), x, y, color, true, matrix, consumers,
-            TextRenderer.TextLayerType.NORMAL, 0x40000000, LightmapTextureManager.MAX_LIGHT_COORDINATE);
+            TextRenderer.TextLayerType.NORMAL, 0, LightmapTextureManager.MAX_LIGHT_COORDINATE);
     }
 }

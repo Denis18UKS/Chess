@@ -21,13 +21,13 @@ import net.minecraft.world.BlockView;
 import net.minecraft.world.World;
 import net.minecraft.block.Blocks;
 
-/** World-placeable control surface; its interactive labels are rendered directly in the world. */
+/** Wooden 3x3 in-world chess control board with its front face used for click targets. */
 public final class ChessSettingsPanelBlock extends Block {
     public static final DirectionProperty FACING = Properties.HORIZONTAL_FACING;
-    private static final VoxelShape SHAPE = Block.createCuboidShape(0, 0, 0, 16, 12, 16);
+    private static final VoxelShape SHAPE = Block.createCuboidShape(0, 0, 0, 16, 16, 16);
 
     public ChessSettingsPanelBlock() {
-        super(AbstractBlock.Settings.copy(Blocks.IRON_BLOCK).strength(2.0f).nonOpaque());
+        super(AbstractBlock.Settings.copy(Blocks.DARK_OAK_PLANKS).strength(2.0f).nonOpaque());
         setDefaultState(getStateManager().getDefaultState().with(FACING, Direction.NORTH));
     }
 
@@ -65,7 +65,7 @@ public final class ChessSettingsPanelBlock extends Block {
     @Override
     public ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player,
                               Hand hand, BlockHitResult hit) {
-        // Client-side world panel callback owns clicks; no screen is opened here.
+        // Client-side world panel callback owns button clicks; no separate screen is opened here.
         return ActionResult.success(world.isClient);
     }
 }

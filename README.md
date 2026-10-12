@@ -19,19 +19,18 @@ Install the built `chess-1.2.0-1.20.1.jar` into `.minecraft/mods`. Multiplayer s
 
 ### World control panel
 
-Place the multi-block Chess Settings Panel in the world. Its visible controls are rendered on the panel itself:
+Place the **wooden** multi-block Chess Settings Panel in the world. Its face uses a compact scoreboard layout with clean lettering on wood, without block-glyph bars or a translucent rectangle behind every label.
 
-- Choose **1v1**, **2v2** or **vs_bot**.
-- Each human player preselects **Белые** or **Чёрные** on the panel, or runs `/chess white` / `/chess black`.
-- If you select the wrong side, use the panel’s clear-selection button or `/chess unselect`.
-- Start the match from the panel. The mod validates the roster first; if the required sides are not filled, it reports **«Недостаточно игроков»** and cancels.
-- A 3–2–1 title countdown is shown before the Fade / teleport transition. Scoreboard membership is created only when the match starts.
+- Choose **1v1**, **2v2** or **С БОТОМ** on the panel.
+- Start the match using **НАЧАТЬ ПАРТИЮ**. The roster is checked first; if a required side is empty, the mod reports **«Недостаточно игроков»**.
+- Side selection is **not** part of the panel. Use **Настройщик триггерных областей** to configure white and black side zones; players choose a side by entering its area.
+- A 3–2–1 countdown is shown before the Fade / teleport transition. Scoreboard membership is created only when the match starts.
 
 Required human roster: 1 white + 1 black for 1v1; 2 white + 2 black for 2v2; 1 white player for vs_bot (the other side is controlled by the existing bot logic).
 
 ### Lobby and teleport points
 
-Use the **TP Configurator** item on a block to open its tabbed destination editor. Choose one tab — **Лобби**, **Белые**, **Чёрные** or **Наблюдение** — then save the point. The block you target is treated as the floor; the direction you are looking is saved as the arrival direction. Set each destination independently. The mod searches for a safe standing position near the configured block and avoids assigning the same block position to multiple players in one teleport group.
+Use **Настройщик точки лобби** to save the lobby spawn/return point. Use **Настройщик командных точек и наблюдения** for the separate **Белые**, **Чёрные** and **Наблюдение** destinations. The block you target is treated as the floor; the direction you are looking is saved as the arrival direction. Set each destination independently. The mod searches for a safe standing position near the configured block and avoids assigning the same block position to multiple players in one teleport group.
 
 Players who are not participating in an active match are sent to the lobby on join. At match end, participants and current spectators are returned to the lobby, temporary side selections/team membership are cleared, and the chessboard is reset.
 
@@ -42,7 +41,7 @@ Players already online in the lobby when a match starts and who are not in its r
 ### Fade and team zones
 
 - Use the **Fade & Teleport Configurator** item to set the fade duration and delay until teleportation. The delay is clamped to at least the fade-out duration so a player is not moved before the screen has gone black.
-- In the general Chess Configurator, mark point A and point B to create the dedicated white/black trigger zone. Entering a zone preselects that side outside a match; it does not add a scoreboard member or start a game by itself.
+- Use **Настройщик триггерных областей**: open it on corner A and save it, then open the tool on corner B and create the zone. It also has dedicated A/B controls for the white and black side-selection areas. Entering a side zone preselects that side outside a match; it does not add a scoreboard member or start a game by itself.
 - Scoreboard teams keep their internal IDs `white` / `black`, but their displayed names are localized as colored **Белые** / **Чёрные**.
 
 ## Set up an arena
@@ -85,7 +84,9 @@ The piece sprites displayed in inventory are generated as separate 32×32 2D PNG
 ## Developer tools
 
 - **Chess Board Configurator**: anchors the logical 8×8 board when used on the first tile.
-- **TP Configurator**: ordinary right-click stores the caller's team destination; sneak-right-click teleports to the saved team destination.
+- **Настройщик точки лобби**: opens a separate screen to save the lobby return/spawn point on the targeted block.
+- **Настройщик командных точек и наблюдения**: opens the tabbed editor for white, black and spectator destinations.
+- **Настройщик триггерных областей**: defines custom trigger volumes and team-side selection zones.
 - **Graffiti Tool**: rename it in an anvil to define a label, then right-click; sneak-right-click cycles the stored scale from 0.5× to 3×.
 
 The graffiti tool creates a persistent vanilla Text Display entity with white text, fixed orientation and a horizontal transform. The entity is synced and saved by Minecraft; sneak-right-click cycles scale before placement.

@@ -16,6 +16,8 @@ public final class ModItems {
     public static final Item CHESS_ASSET_STUDIO_TOOL = register("chess_asset_studio_tool", new ChessAssetStudioItem(new Item.Settings().maxCount(1)));
     public static final Item CHESS_CONFIG_TOOL = register("chess_config_tool", new ChessConfigToolItem(new Item.Settings().maxCount(1)));
     public static final Item CHESS_FADE_TOOL = register("chess_fade_tool", new ChessFadeToolItem(new Item.Settings().maxCount(1)));
+    public static final Item CHESS_ZONE_TOOL = register("chess_zone_tool", new Item(new Item.Settings().maxCount(1)));
+    public static final Item CHESS_LOBBY_TOOL = register("chess_lobby_tool", new Item(new Item.Settings().maxCount(1)));
 
     public static final ItemGroup CHESS_GROUP = Registry.register(
         Registries.ITEM_GROUP,
@@ -29,6 +31,8 @@ public final class ModItems {
                 for (Block block : ModBlocks.figureBlocks()) entries.add(block);
                 entries.add(CHESS_BOARD_TOOL);
                 entries.add(CHESS_TELEPORT_TOOL);
+                entries.add(CHESS_LOBBY_TOOL);
+                entries.add(CHESS_ZONE_TOOL);
                 entries.add(CHESS_GRAFFITI_TOOL);
                 entries.add(CHESS_ASSET_STUDIO_TOOL);
                 entries.add(CHESS_CONFIG_TOOL);
