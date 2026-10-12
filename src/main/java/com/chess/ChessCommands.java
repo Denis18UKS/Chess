@@ -142,7 +142,7 @@ public final class ChessCommands {
                             StringArgumentType.getString(ctx, "name"), ""))
                     .then(argument("onEnter", StringArgumentType.greedyString()).executes(ctx ->
                         defineZone(ctx.getSource(), BlockPosArgumentType.getBlockPos(ctx, "pos"),
-                            StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "onEnter")))))))
+                            StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "onEnter"))))))))
             .then(literal("white").executes(ctx -> joinTeam(ctx.getSource(), "white")))
             .then(literal("black").executes(ctx -> joinTeam(ctx.getSource(), "black")))
             .then(literal("unselect").executes(ctx -> {
