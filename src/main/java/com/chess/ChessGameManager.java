@@ -1049,6 +1049,13 @@ public final class ChessGameManager {
 
     public static void resetBoard(ServerWorld world) {
         BoardState state = board(world);
+        // A manual reset must not bypass the fade/teleport cleanup of a running match
+        // or cancel a lobby return already scheduled for an end transition.
+        if (state.finishPending) return;
+        if (state.running || state.countdownActive) {
+            finishMatch(world, "Шахматная партия завершена сбросом доски.");
+            return;
+        }
         if (!state.configured) throw new IllegalStateException("Сначала привяжите доску командой /chess board set <x y z> или конфигуратором.");
         // Manual figure reset during the post-game delay must not cancel the already
         // scheduled lobby return. A regular in-game reset never creates such a delay.
@@ -1421,9 +1428,11 @@ public final class ChessGameManager {
 
     public static void setMatchMode(ServerWorld world, MatchMode mode) {
         BoardState state = board(world);
+        if (state.running || state.countdownActive || state.finishPending)
+            throw new IllegalStateException("Режим партии нельзя менять во время подготовки, активной игры или завершения.");
         state.matchMode = mode;
         ChessWorldConfig.get(world.getServer()).setMatchMode(mode);
-        String label = mode == MatchMode.ONE_ONE ? "1v1" : mode == MatchMode.TWO_TWO ? "2v2" : "1_vs_bot";
+        String label = mode == MatchMode.ONE_ONE ? "1v1" : mode == MatchMode.TWO_TWO ? "2v2" : "vs_bot";
         broadcast(world, "Режим партии: " + label + ".");
         ChessNetwork.broadcastBoard(world);
     }
