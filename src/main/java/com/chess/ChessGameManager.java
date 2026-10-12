@@ -162,6 +162,15 @@ public final class ChessGameManager {
 
         if (state.matchEnded || boardIsEmpty(world, state)) resetBoard(world);
 
+        state.observerOriginalModes.clear();
+        for (UUID id : selectedWhite) {
+            ServerPlayerEntity selected = world.getServer().getPlayerManager().getPlayer(id);
+            if (selected != null) state.observerOriginalModes.put(id, selected.interactionManager.getGameMode());
+        }
+        for (UUID id : selectedBlack) {
+            ServerPlayerEntity selected = world.getServer().getPlayerManager().getPlayer(id);
+            if (selected != null) state.observerOriginalModes.put(id, selected.interactionManager.getGameMode());
+        }
         state.pendingWhiteParticipants.clear();
         state.pendingWhiteParticipants.addAll(selectedWhite);
         state.pendingBlackParticipants.clear();
@@ -724,7 +733,6 @@ public final class ChessGameManager {
             }
             clearChessTeam(server, player);
             if (!anyActiveMatch && !anyCountdown) config.clearSelectedTeam(player.getUuid());
-            player.changeGameMode(GameMode.ADVENTURE);
             teleportPlayerToLobby(player);
             if (anyActiveMatch) player.sendMessage(Text.literal("Партия уже идёт. Нажми O или используй /chess spectate, чтобы смотреть игру."), false);
             return;
@@ -911,7 +919,7 @@ public final class ChessGameManager {
                 configuredLobby == null ? player.getPitch() : configuredLobby.pitch);
             player.getCommandTags().remove("chess_lobby_return");
             GameMode oldMode = state.observerOriginalModes.remove(player.getUuid());
-            player.changeGameMode(oldMode == null || oldMode == GameMode.SPECTATOR ? GameMode.ADVENTURE : oldMode);
+            player.changeGameMode(oldMode == null ? GameMode.ADVENTURE : oldMode);
             ChessNetwork.sendSpectatorState(player, false, state.whiteTurn);
         }
     }
