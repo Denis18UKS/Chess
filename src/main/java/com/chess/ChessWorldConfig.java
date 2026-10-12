@@ -32,7 +32,7 @@ public final class ChessWorldConfig extends PersistentState {
     private String zoneCornerName = "";
     private int fadeDurationTicks = 10;
     private int teleportDelayTicks = 14;
-    private int lobbyDelaySeconds = 0;
+    private int lobbyDelaySeconds = 20;
     private int matchDurationMinutes = 0;
     private ChessGameManager.MatchMode matchMode = ChessGameManager.MatchMode.ONE_ONE;
     private ChessGameManager.RuleMode ruleMode = ChessGameManager.RuleMode.REALISM;

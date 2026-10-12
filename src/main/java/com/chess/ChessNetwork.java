@@ -37,19 +37,6 @@ public final class ChessNetwork {
             server.execute(() -> sendBoard(player)));
         ServerPlayNetworking.registerGlobalReceiver(SPECTATE_TOGGLE, (server, player, handler, buf, responseSender) ->
             server.execute(() -> ChessGameManager.toggleSpectating(player)));
-        ServerPlayNetworking.registerGlobalReceiver(FADE_TRANSITION, (server, player, handler, buf, responseSender) ->
-            server.execute(() -> {
-                if (player.getCommandSource().hasPermissionLevel(2)) {
-                    int fadeTicks = Math.max(2, Math.min(100, buf.readInt()));
-                    int delayTicks = Math.max(0, Math.min(200, buf.readInt()));
-                    ChessWorldConfig config = ChessWorldConfig.get(server);
-                    config.setFadeDurationTicks(fadeTicks);
-                    config.setTeleportDelayTicks(delayTicks);
-                    player.sendMessage(net.minecraft.text.Text.literal("Fade сохранён: "
-                        + String.format(java.util.Locale.ROOT, "%.1f", fadeTicks * 0.05) + " с; задержка телепортации "
-                        + String.format(java.util.Locale.ROOT, "%.1f", delayTicks * 0.05) + " с."), false);
-                }
-            }));
         ServerPlayNetworking.registerGlobalReceiver(ADMIN_ACTION, (server, player, handler, buf, responseSender) -> {
             String action = buf.readString(64);
             BlockPos pos = buf.readBlockPos();

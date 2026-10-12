@@ -520,7 +520,12 @@ public final class ChessGameManager {
     private static void processStartCountdowns(MinecraftServer server, long tick) {
         for (Map.Entry<RegistryKey<World>, BoardState> entry : new ArrayList<>(BOARDS.entrySet())) {
             BoardState state = entry.getValue();
-            if (!state.countdownActive || tick < state.countdownNextTick) continue;
+            if (!state.countdownActive) continue;
+            if (state.countdownFadeStarted) {
+                if (tick < state.countdownTeleportAtTick) continue;
+            } else if (tick < state.countdownNextTick) {
+                continue;
+            }
             ServerWorld world = server.getWorld(entry.getKey());
             if (world == null) continue;
             boolean rosterOnline = state.pendingWhiteParticipants.stream().allMatch(id -> server.getPlayerManager().getPlayer(id) != null)
@@ -549,6 +554,7 @@ public final class ChessGameManager {
                 int delayTicks = config.getEffectiveTeleportDelayTicks();
                 state.countdownFadeStarted = true;
                 state.countdownTeleportAtTick = tick + delayTicks;
+                state.countdownNextTick = state.countdownTeleportAtTick;
                 beginFadeTransition(server, state, fadeTicks, delayTicks);
                 continue;
             }
@@ -611,7 +617,7 @@ public final class ChessGameManager {
 
     private static void showServerTitle(MinecraftServer server, String message) {
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            player.networkHandler.sendPacket(new TitleS2CPacket(TitleS2CPacket.Action.TITLE, Text.literal(message)));
+            player.networkHandler.sendPacket(new TitleS2CPacket(Text.literal(message)));
         }
     }
 
