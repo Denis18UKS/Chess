@@ -329,7 +329,10 @@ public final class ChessGameManager {
 
     public static void handleAdminAction(ServerPlayerEntity player, String action, BlockPos pos,
                                          String a, String b, String c, int v1, int v2, int v3) {
-        if (!"get_settings".equals(action) && !"get_fade_settings".equals(action) && !player.getCommandSource().hasPermissionLevel(2)) {
+        boolean publicPanelAction = java.util.Set.of("get_panel_state", "panel_mode", "select_white", "select_black",
+            "clear_selection", "panel_start").contains(action);
+        if (!"get_settings".equals(action) && !"get_fade_settings".equals(action)
+            && !publicPanelAction && !player.getCommandSource().hasPermissionLevel(2)) {
             tell(player, "Для настройки панели требуется право оператора.");
             return;
         }
@@ -343,6 +346,38 @@ public final class ChessGameManager {
                     return;
                 case "get_fade_settings":
                     ChessNetwork.sendFadeSettings(player, config);
+                    return;
+                case "get_panel_state":
+                    ChessNetwork.sendPanelMode(player, config.getMatchMode());
+                    return;
+                case "panel_mode": {
+                    if (state.running || state.countdownActive || state.finishPending) {
+                        tell(player, "Нельзя менять режим во время подготовки, партии или завершения.");
+                        return;
+                    }
+                    MatchMode mode = v1 == 1 ? MatchMode.TWO_TWO : v1 == 2 ? MatchMode.ONE_VS_BOT : MatchMode.ONE_ONE;
+                    config.setMatchMode(mode);
+                    state.matchMode = mode;
+                    if (mode == MatchMode.ONE_VS_BOT) {
+                        for (Map.Entry<java.util.UUID, String> choice : config.getSelectedTeams().entrySet()) {
+                            if ("black".equals(choice.getValue())) config.clearSelectedTeam(choice.getKey());
+                        }
+                    }
+                    ChessNetwork.broadcastPanelMode(player.getServer(), mode);
+                    tell(player, "Выбран режим: " + (mode == MatchMode.ONE_ONE ? "1v1" : mode == MatchMode.TWO_TWO ? "2v2" : "vs_bot"));
+                    return;
+                }
+                case "select_white":
+                    selectTeam(player, "white");
+                    return;
+                case "select_black":
+                    selectTeam(player, "black");
+                    return;
+                case "clear_selection":
+                    clearTeamSelection(player);
+                    return;
+                case "panel_start":
+                    start(world);
                     return;
                 case "set_fade":
                     config.setFadeDurationTicks(v1);
@@ -380,6 +415,7 @@ public final class ChessGameManager {
                     config.setMatchMode(mode);
                     config.setMatchDurationMinutes(v2);
                     config.setRuleMode(rules);
+                    ChessNetwork.broadcastPanelMode(player.getServer(), mode);
                     if (!state.running) {
                         state.matchMode = mode;
                         state.matchDurationMinutes = Math.max(0, Math.min(1440, v2));

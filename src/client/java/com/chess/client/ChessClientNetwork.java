@@ -79,6 +79,11 @@ public final class ChessClientNetwork {
             client.execute(() -> ChessFadeHud.start(fadeOutTicks, holdTicks, fadeInTicks));
         });
 
+        ClientPlayNetworking.registerGlobalReceiver(ChessNetwork.PANEL_MODE_STATE, (client, handler, buf, responseSender) -> {
+            int mode = buf.readInt();
+            client.execute(() -> ChessPanelWorldRenderer.setModeIndex(mode));
+        });
+
         ClientPlayNetworking.registerGlobalReceiver(ChessNetwork.FADE_SETTINGS_STATE, (client, handler, buf, responseSender) -> {
             int fadeTicks = buf.readInt();
             int teleportDelayTicks = buf.readInt();

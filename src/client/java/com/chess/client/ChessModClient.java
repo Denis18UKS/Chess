@@ -8,6 +8,7 @@ import com.chess.ModItems;
 import com.chess.client.renderer.ChessFigureRenderer;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
@@ -32,6 +33,8 @@ public class ChessModClient implements ClientModInitializer {
         ChessClockHud.register();
         ChessSpectatorHud.register();
         ChessFadeHud.register();
+        ChessPanelWorldRenderer.register();
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> ChessPanelWorldRenderer.requestPanelState());
         KeyBinding spectatorKey = KeyBindingHelper.registerKeyBinding(
             new KeyBinding("key.chess.spectate", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_O, "category.chess"));
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -58,9 +61,8 @@ public class ChessModClient implements ClientModInitializer {
                 return ActionResult.SUCCESS;
             }
             if (world.isClient && world.getBlockState(hit.getBlockPos()).isOf(ModBlocks.CHESS_SETTINGS_PANEL)) {
-                MinecraftClient client = MinecraftClient.getInstance();
-                client.setScreen(new ChessSettingsScreen(client.currentScreen, hit.getBlockPos()));
-                return ActionResult.SUCCESS;
+                return ChessPanelWorldRenderer.handleClick(world, hit)
+                    ? ActionResult.SUCCESS : ActionResult.PASS;
             }
             // Let the figure block's own onUse handler apply the dye in both 2D and 3D worlds.
             if (stack.getItem() instanceof net.minecraft.item.DyeItem) return ActionResult.PASS;

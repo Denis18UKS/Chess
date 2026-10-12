@@ -4,6 +4,7 @@ import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.PacketByteBuf;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Identifier;
@@ -29,6 +30,7 @@ public final class ChessNetwork {
     public static final Identifier SPECTATOR_STATE = ChessMod.id("spectator_state");
     public static final Identifier FADE_TRANSITION = ChessMod.id("fade_transition");
     public static final Identifier FADE_SETTINGS_STATE = ChessMod.id("fade_settings_state");
+    public static final Identifier PANEL_MODE_STATE = ChessMod.id("panel_mode_state");
 
     private ChessNetwork() {}
 
@@ -103,6 +105,17 @@ public final class ChessNetwork {
             ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(uuid);
             if (player != null) sendSpectatorState(player, state.running, state.whiteTurn);
         }
+    }
+
+    public static void sendPanelMode(ServerPlayerEntity player, ChessGameManager.MatchMode mode) {
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeInt(mode == ChessGameManager.MatchMode.ONE_ONE ? 0
+            : mode == ChessGameManager.MatchMode.TWO_TWO ? 1 : 2);
+        ServerPlayNetworking.send(player, PANEL_MODE_STATE, buf);
+    }
+
+    public static void broadcastPanelMode(MinecraftServer server, ChessGameManager.MatchMode mode) {
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) sendPanelMode(player, mode);
     }
 
     public static void sendFadeSettings(ServerPlayerEntity player, ChessWorldConfig config) {
