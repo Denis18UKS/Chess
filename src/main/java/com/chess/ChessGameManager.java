@@ -128,8 +128,8 @@ public final class ChessGameManager {
     public static void start(ServerWorld world) {
         BoardState state = board(world);
         if (!state.configured) throw new IllegalStateException("Сначала привяжите шахматное поле конфигуратором.");
-        if (state.running || state.countdownActive) throw new IllegalStateException("Партия уже запущена или готовится к запуску.");
-        boolean anotherMatch = BOARDS.values().stream().anyMatch(other -> other.running || other.countdownActive);
+        if (state.running || state.countdownActive || state.finishPending) throw new IllegalStateException("Партия уже запущена, готовится к запуску или завершается.");
+        boolean anotherMatch = BOARDS.values().stream().anyMatch(other -> other.running || other.countdownActive || other.finishPending);
         if (anotherMatch) throw new IllegalStateException("Другая шахматная партия уже идёт.");
 
         ChessWorldConfig config = ChessWorldConfig.get(world.getServer());
@@ -171,6 +171,8 @@ public final class ChessGameManager {
             if (!playersForMatch.contains(player.getUuid())) state.observers.add(player.getUuid());
         }
         state.countdownActive = true;
+        state.countdownFadeStarted = false;
+        state.countdownTeleportAtTick = -1L;
         state.countdownRemaining = 3;
         state.countdownNextTick = serverTick(world.getServer()) + 1L;
         state.returnToLobbyAtTick = -1L;
@@ -225,48 +227,84 @@ public final class ChessGameManager {
 
     private static void finishMatch(ServerWorld world, String message) {
         BoardState state = board(world);
-        if (!state.running && !state.countdownActive && state.matchEnded) return;
+        if (state.finishPending || (!state.running && !state.countdownActive)) return;
+
         state.running = false;
         state.countdownActive = false;
+        state.countdownFadeStarted = false;
         state.countdownRemaining = 0;
-        state.pendingWhiteParticipants.clear();
-        state.pendingBlackParticipants.clear();
-        state.paused = false;
-        state.pausedByDisconnect = false;
         state.pending = null;
         state.promotionPending = false;
         state.selected3DPieces.clear();
+        state.paused = false;
+        state.pausedByDisconnect = false;
         state.disconnectedPlayerId = null;
         state.disconnectedTeamName = "";
         for (UUID participant : state.participants) DISCONNECTED_DURING_ACTIVE_MATCH.remove(participant);
+
         state.matchEnded = true;
         state.matchDeadlineAtTick = -1L;
         state.returnToLobbyAtTick = -1L;
         state.botMoveAtTick = -1L;
+        state.finishPending = true;
+
+        ChessWorldConfig config = ChessWorldConfig.get(world.getServer());
+        int fadeTicks = config.getFadeDurationTicks();
+        int delayTicks = config.getEffectiveTeleportDelayTicks();
+        state.finishTeleportAtTick = serverTick(world.getServer()) + delayTicks;
+
         updateTurnGlow(world, state);
         syncAllTeamPieces(world.getServer());
+        clearChessTeams(world.getServer());
+        config.clearSelectedTeams();
         ChessNetwork.broadcastBoard(world);
         ChessNetwork.broadcastClockState(world);
-        broadcast(world, message);
+        world.getServer().getPlayerManager().broadcast(Text.literal(message), false);
 
-        // End the spectator session first, then return every participant and observer.
         for (UUID observerId : new HashSet<>(state.observers)) {
             ServerPlayerEntity observer = world.getServer().getPlayerManager().getPlayer(observerId);
-            if (observer != null) {
-                ChessNetwork.sendSpectatorState(observer, false, state.whiteTurn);
-                observer.changeGameMode(GameMode.ADVENTURE);
+            if (observer != null) ChessNetwork.sendSpectatorState(observer, false, state.whiteTurn);
+        }
+        beginFadeTransition(world.getServer(), state, fadeTicks, delayTicks);
+    }
+
+    private static void beginFadeTransition(MinecraftServer server, BoardState state, int fadeTicks, int delayTicks) {
+        int fade = Math.max(2, fadeTicks);
+        int delay = Math.max(fade, delayTicks);
+        int hold = Math.max(0, delay - fade);
+        Set<UUID> affected = new HashSet<>(state.participants);
+        affected.addAll(state.observers);
+        affected.addAll(state.pendingWhiteParticipants);
+        affected.addAll(state.pendingBlackParticipants);
+        for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
+            if (entry.getValue() == state) {
+                ServerWorld source = server.getWorld(entry.getKey());
+                if (source != null) for (ServerPlayerEntity player : source.getPlayers()) affected.add(player.getUuid());
+                break;
             }
         }
+        for (UUID uuid : affected) {
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
+            if (player != null) ChessNetwork.sendFadeTransition(player, fade, hold, fade);
+        }
+    }
+
+    private static void completeMatchFinish(ServerWorld world, BoardState state) {
+        state.finishPending = false;
+        state.finishTeleportAtTick = -1L;
         teleportAllToLobby(world);
         clearChessTeams(world.getServer());
         ChessWorldConfig.get(world.getServer()).clearSelectedTeams();
-        for (ServerPlayerEntity player : world.getServer().getPlayerManager().getPlayerList()) {
-            if (state.observers.contains(player.getUuid())) player.changeGameMode(GameMode.ADVENTURE);
-        }
         state.observers.clear();
+        state.observerOriginalModes.clear();
         state.participants.clear();
         state.pendingWhiteParticipants.clear();
         state.pendingBlackParticipants.clear();
+        state.countdownActive = false;
+        state.countdownFadeStarted = false;
+        state.countdownRemaining = 0;
+        state.countdownNextTick = -1L;
+        state.lastParticipantTeams.clear();
         resetBoard(world);
     }
 
@@ -291,7 +329,7 @@ public final class ChessGameManager {
 
     public static void handleAdminAction(ServerPlayerEntity player, String action, BlockPos pos,
                                          String a, String b, String c, int v1, int v2, int v3) {
-        if (!"get_settings".equals(action) && !player.getCommandSource().hasPermissionLevel(2)) {
+        if (!"get_settings".equals(action) && !"get_fade_settings".equals(action) && !player.getCommandSource().hasPermissionLevel(2)) {
             tell(player, "Для настройки панели требуется право оператора.");
             return;
         }
@@ -302,6 +340,36 @@ public final class ChessGameManager {
             switch (action) {
                 case "get_settings":
                     ChessNetwork.sendAdminState(player, state);
+                    return;
+                case "get_fade_settings":
+                    ChessNetwork.sendFadeSettings(player, config);
+                    return;
+                case "set_fade":
+                    config.setFadeDurationTicks(v1);
+                    config.setTeleportDelayTicks(v2);
+                    tell(player, "Fade сохранён: затемнение " + String.format(java.util.Locale.ROOT, "%.1f", config.getFadeDurationTicks() * 0.05)
+                        + " с; задержка " + String.format(java.util.Locale.ROOT, "%.1f", config.getTeleportDelayTicks() * 0.05) + " с. "
+                        + "Фактическая задержка не меньше длительности затемнения.");
+                    return;
+                case "set_spectator":
+                    config.setLocation("spectator", world, pos);
+                    tell(player, "Точка наблюдения сохранена: " + pos.toShortString());
+                    return;
+                case "zone_white_corner_a":
+                    config.saveZoneCorner(world, pos, "team_white");
+                    tell(player, "Первый угол зоны белых сохранён. Отметь второй угол.");
+                    return;
+                case "zone_white_define":
+                    config.defineZone("team_white", world, pos, "chess white", "");
+                    tell(player, "Триггерная зона белых сохранена.");
+                    return;
+                case "zone_black_corner_a":
+                    config.saveZoneCorner(world, pos, "team_black");
+                    tell(player, "Первый угол зоны чёрных сохранён. Отметь второй угол.");
+                    return;
+                case "zone_black_define":
+                    config.defineZone("team_black", world, pos, "chess black", "");
+                    tell(player, "Триггерная зона чёрных сохранена.");
                     return;
                 case "start_match":
                     start(world);
@@ -364,7 +432,7 @@ public final class ChessGameManager {
         MinecraftServer server = player.getServer();
         if (server == null) return false;
         if (!"white".equals(teamName) && !"black".equals(teamName)) return false;
-        if (BOARDS.values().stream().anyMatch(state -> state.running || state.countdownActive)) {
+        if (BOARDS.values().stream().anyMatch(state -> state.running || state.countdownActive || state.finishPending)) {
             player.sendMessage(Text.literal("Нельзя менять сторону во время подготовки или активной партии."), false);
             return false;
         }
@@ -394,7 +462,7 @@ public final class ChessGameManager {
 
     public static boolean clearTeamSelection(ServerPlayerEntity player) {
         MinecraftServer server = player.getServer();
-        if (server == null || BOARDS.values().stream().anyMatch(state -> state.running || state.countdownActive)) {
+        if (server == null || BOARDS.values().stream().anyMatch(state -> state.running || state.countdownActive || state.finishPending)) {
             player.sendMessage(Text.literal("Нельзя менять выбор команды во время партии."), false);
             return false;
         }
@@ -475,8 +543,19 @@ public final class ChessGameManager {
                 state.countdownNextTick = tick + 20L;
                 continue;
             }
+            if (!state.countdownFadeStarted) {
+                ChessWorldConfig config = ChessWorldConfig.get(server);
+                int fadeTicks = config.getFadeDurationTicks();
+                int delayTicks = config.getEffectiveTeleportDelayTicks();
+                state.countdownFadeStarted = true;
+                state.countdownTeleportAtTick = tick + delayTicks;
+                beginFadeTransition(server, state, fadeTicks, delayTicks);
+                continue;
+            }
 
             state.countdownActive = false;
+            state.countdownFadeStarted = false;
+            state.countdownTeleportAtTick = -1L;
             Scoreboard scoreboard = server.getScoreboard();
             Team white = ensureChessTeam(scoreboard, "white");
             Team black = ensureChessTeam(scoreboard, "black");
@@ -853,6 +932,10 @@ public final class ChessGameManager {
         state.blackCapturedPieces.clear();
         state.selected3DPieces.clear();
         state.countdownActive = false;
+        state.countdownFadeStarted = false;
+        state.countdownTeleportAtTick = -1L;
+        state.finishPending = false;
+        state.finishTeleportAtTick = -1L;
         state.countdownRemaining = 0;
         state.pendingWhiteParticipants.clear();
         state.pendingBlackParticipants.clear();
@@ -1385,6 +1468,11 @@ public final class ChessGameManager {
             BoardState state = entry.getValue();
             if (world == null) continue;
 
+            if (state.finishPending && tick >= state.finishTeleportAtTick) {
+                completeMatchFinish(world, state);
+                continue;
+            }
+
             if (tick % 10L == 0L) updateTurnGlow(world, state);
 
             if (state.returnToLobbyAtTick >= 0L && tick >= state.returnToLobbyAtTick) {
@@ -1665,8 +1753,12 @@ public final class ChessGameManager {
         public String disconnectedTeamName = "";
         public boolean matchEnded;
         public boolean countdownActive;
+        public boolean countdownFadeStarted;
+        public long countdownTeleportAtTick = -1L;
         public int countdownRemaining;
         public long countdownNextTick = -1L;
+        public boolean finishPending;
+        public long finishTeleportAtTick = -1L;
         public final Set<UUID> pendingWhiteParticipants = new HashSet<>();
         public final Set<UUID> pendingBlackParticipants = new HashSet<>();
         public final Set<UUID> observers = new HashSet<>();
