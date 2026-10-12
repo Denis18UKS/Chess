@@ -56,6 +56,6 @@ public final class ChessFadeHud {
         int opacity = (int)Math.max(0, Math.min(255, Math.round(alpha * 255.0)));
         if (opacity <= 0) return;
         context.fill(0, 0, client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight(),
-            (opacity << 24));
+            (opacity << 24) | 0x000000);
     }
 }
