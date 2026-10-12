@@ -80,15 +80,15 @@ public final class ChessPanelWorldRenderer {
         };
         double uLocal = Math.cos(angle) * localX - Math.sin(angle) * localZ;
         double u = (uLocal + 1.5) * PIXELS_PER_BLOCK;
-        double v = (anchor.getY() + 3.0 - hit.getPos().y) * PIXELS_PER_BLOCK;
+        double v = (anchor.getY() + 2.0 - hit.getPos().y) * PIXELS_PER_BLOCK;
 
         String action = null;
         int value = 0;
-        if (v >= 42 && v <= 82 && u >= 6 && u <= 186) {
+        if (v >= 38 && v <= 68 && u >= 6 && u <= 186) {
             value = u < 64 ? 0 : u < 128 ? 1 : 2;
             action = "panel_mode";
             modeIndex = value;
-        } else if (v >= 104 && v <= 145 && u >= 24 && u <= 168) {
+        } else if (v >= 70 && v <= 94 && u >= 24 && u <= 168) {
             // Side is deliberately not chosen here: players select it by entering trigger zones.
             action = "panel_start";
         }
@@ -109,7 +109,7 @@ public final class ChessPanelWorldRenderer {
     private static BlockPos findAnchor(World world, BlockPos clicked, Direction facing) {
         Direction lateral = facing.rotateYCounterclockwise();
         List<BlockPos> candidates = new ArrayList<>();
-        for (int dy = 0; dy <= 2; dy++) {
+        for (int dy = 0; dy <= 1; dy++) {
             for (int across = -1; across <= 1; across++) {
                 BlockPos candidate = clicked.add(-lateral.getOffsetX() * across, -dy,
                     -lateral.getOffsetZ() * across);
@@ -122,7 +122,7 @@ public final class ChessPanelWorldRenderer {
 
     private static boolean candidateIsPanel(World world, BlockPos anchor, Direction facing) {
         Direction lateral = facing.rotateYCounterclockwise();
-        for (int y = 0; y < 3; y++) for (int across = -1; across <= 1; across++) {
+        for (int y = 0; y < 2; y++) for (int across = -1; across <= 1; across++) {
             BlockPos pos = anchor.add(lateral.getOffsetX() * across, y, lateral.getOffsetZ() * across);
             BlockState state = world.getBlockState(pos);
             if (!(state.getBlock() instanceof ChessSettingsPanelBlock)
@@ -164,7 +164,7 @@ public final class ChessPanelWorldRenderer {
         Vec3d camera = context.camera().getPos();
         MatrixStack matrices = context.matrixStack();
         matrices.push();
-        matrices.translate(anchor.getX() + 0.5 - camera.x, anchor.getY() + 3.0 - camera.y,
+        matrices.translate(anchor.getX() + 0.5 - camera.x, anchor.getY() + 2.0 - camera.y,
             anchor.getZ() + 0.5 - camera.z);
         double angle = switch (facing) {
             case SOUTH -> 0.0;
@@ -180,19 +180,19 @@ public final class ChessPanelWorldRenderer {
 
         // Inspired by the supplied wooden scoreboard: simple gold headings and clean text.
         // No repeated block-glyph bars and no per-line translucent rectangles.
-        drawCentered(renderer, buffers, matrix, "ШАХМАТЫ", 96, 18, 0xFFFFB52E);
-        drawCentered(renderer, buffers, matrix, "РЕЖИМ ПАРТИИ", 96, 42, 0xFFFFD16A);
+        drawCentered(renderer, buffers, matrix, "ШАХМАТЫ", 96, 12, 0xFFFFB52E);
+        drawCentered(renderer, buffers, matrix, "РЕЖИМ ПАРТИИ", 96, 31, 0xFFFFD16A);
         String[] modes = {"1v1", "2v2", "С БОТОМ"};
         int[] centers = {32, 96, 160};
         for (int i = 0; i < modes.length; i++) {
             boolean selected = i == modeIndex;
             String label = selected ? "[ " + modes[i] + " ]" : modes[i];
-            drawCentered(renderer, buffers, matrix, label, centers[i], 62,
+            drawCentered(renderer, buffers, matrix, label, centers[i], 52,
                 selected ? 0xFFFFB52E : 0xFFF4E7C6);
         }
-        drawCentered(renderer, buffers, matrix, "НАЧАТЬ ПАРТИЮ", 96, 121, 0xFFFFD16A);
-        drawCentered(renderer, buffers, matrix, "СТОРОНА — ЧЕРЕЗ ЗОНУ", 96, 158, 0xFFF4E7C6);
-        drawCentered(renderer, buffers, matrix, "3 • 2 • 1  →  ИГРА", 96, 178, 0xFFFFB52E);
+        drawCentered(renderer, buffers, matrix, "НАЧАТЬ ПАРТИЮ", 96, 81, 0xFFFFD16A);
+        drawCentered(renderer, buffers, matrix, "СТОРОНА — ЧЕРЕЗ ЗОНУ", 96, 101, 0xFFF4E7C6);
+        drawCentered(renderer, buffers, matrix, "3 • 2 • 1  →  ИГРА", 96, 118, 0xFFFFB52E);
         matrices.pop();
     }
 

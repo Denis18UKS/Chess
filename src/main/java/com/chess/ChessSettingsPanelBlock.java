@@ -52,7 +52,7 @@ public final class ChessSettingsPanelBlock extends Block {
         if (world.isClient || placer == null) return;
         Direction facing = state.get(FACING);
         Direction lateral = facing.rotateYCounterclockwise();
-        for (int vertical = 0; vertical < 3; vertical++) {
+        for (int vertical = 0; vertical < 2; vertical++) {
             for (int across = -1; across <= 1; across++) {
                 if (vertical == 0 && across == 0) continue;
                 BlockPos part = pos.add(lateral.getOffsetX() * across, vertical, lateral.getOffsetZ() * across);
