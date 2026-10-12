@@ -567,14 +567,17 @@ public final class ChessGameManager {
             ServerWorld destination = resolveWorld(player.getServer(), target.dimension);
             if (destination != null) {
                 BlockPos feet = findSafeFeetPosition(destination, target.pos, new HashSet<>(), Set.of(player.getUuid()));
-                player.teleport(destination, feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5,
-                    target.yaw, target.pitch);
-                return;
+                if (feet != null) {
+                    player.teleport(destination, feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5,
+                        target.yaw, target.pitch);
+                    return;
+                }
             }
         }
         BlockPos fallback = state.origin.add(4, 4, -3);
         BlockPos feet = findSafeFeetPosition(boardWorld, fallback, new HashSet<>(), Set.of(player.getUuid()));
-        player.teleport(boardWorld, feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5, 0.0f, 25.0f);
+        if (feet != null) player.teleport(boardWorld, feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5, 0.0f, 25.0f);
+        else player.sendMessage(Text.literal("Не найдено безопасное место наблюдения. Настрой точку наблюдения."), false);
     }
 
     private static void processStartCountdowns(MinecraftServer server, long tick) {
@@ -668,12 +671,24 @@ public final class ChessGameManager {
         List<UUID> ordered = ids.stream().sorted(java.util.Comparator.comparing(UUID::toString)).toList();
         Set<UUID> moving = new HashSet<>(ids);
         Set<BlockPos> reserved = new HashSet<>();
+        List<ServerPlayerEntity> players = new ArrayList<>();
+        List<BlockPos> positions = new ArrayList<>();
         for (int index = 0; index < ordered.size(); index++) {
             ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(ordered.get(index));
             if (player == null) continue;
             BlockPos base = state.origin.add(index * 2, 0, white ? -3 : 10);
             BlockPos feet = findSafeFeetPosition(world, base, reserved, moving);
+            if (feet == null) {
+                player.sendMessage(Text.literal("Не найдено безопасное место у шахматной доски. Проверь расположение поля."), false);
+                continue;
+            }
             reserved.add(feet);
+            players.add(player);
+            positions.add(feet);
+        }
+        for (int i = 0; i < players.size(); i++) {
+            ServerPlayerEntity player = players.get(i);
+            BlockPos feet = positions.get(i);
             player.teleport(world, feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5,
                 white ? 180.0f : 0.0f, 0.0f);
         }
@@ -816,8 +831,11 @@ public final class ChessGameManager {
             destination = server.getOverworld();
         }
         BlockPos lobby = configuredLobby == null ? destination.getSpawnPos() : configuredLobby.pos;
-        Set<UUID> moving = Set.of(player.getUuid());
-        BlockPos feet = findSafeFeetPosition(destination, lobby, new HashSet<>(), moving);
+        BlockPos feet = findSafeFeetPosition(destination, lobby, new HashSet<>(), Set.of(player.getUuid()));
+        if (feet == null) {
+            player.sendMessage(Text.literal("Не удалось найти безопасную точку лобби. Проверь настройки лобби."), false);
+            return;
+        }
         player.teleport(destination, feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5,
             configuredLobby == null ? player.getYaw() : configuredLobby.yaw,
             configuredLobby == null ? player.getPitch() : configuredLobby.pitch);
@@ -829,34 +847,45 @@ public final class ChessGameManager {
      */
     private static BlockPos findSafeFeetPosition(ServerWorld world, BlockPos base,
                                                   Set<BlockPos> reservedFeet, Set<UUID> movingPlayers) {
-        for (int radius = 0; radius <= 10; radius++) {
+        // Search increasingly wider rings and several heights, so a configured point
+        // above an empty pit or against a wall cannot send a player into blocks.
+        int[] verticalOffsets = {0, 1, 2, 3, 4, 5, -1, -2, -3, -4, -5, -6, -8, -10};
+        BlockPos found = searchSafeFeet(world, base, 12, verticalOffsets, reservedFeet, movingPlayers);
+        if (found != null) return found;
+
+        // A misconfigured custom point may have no walkable floor. In that case look near
+        // the world's own spawn rather than falling back to an unchecked coordinate.
+        BlockPos worldSpawn = world.getSpawnPos();
+        int[] spawnOffsets = {0, 1, 2, 3, 4, 5, 6, 8, 10, 12, -1, -2, -3, -4, -5};
+        return searchSafeFeet(world, worldSpawn, 24, spawnOffsets, reservedFeet, movingPlayers);
+    }
+
+    private static BlockPos searchSafeFeet(ServerWorld world, BlockPos base, int maxRadius, int[] verticalOffsets,
+                                           Set<BlockPos> reservedFeet, Set<UUID> movingPlayers) {
+        for (int radius = 0; radius <= maxRadius; radius++) {
             for (int dx = -radius; dx <= radius; dx++) {
                 for (int dz = -radius; dz <= radius; dz++) {
                     if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) continue;
-                    BlockPos feet = new BlockPos(base.getX() + dx, base.getY() + 1, base.getZ() + dz);
-                    if (reservedFeet.contains(feet)) continue;
-                    BlockPos floor = feet.down();
-                    if (!world.getBlockState(floor).isSolidBlock(world, floor)) continue;
-                    if (!world.getBlockState(feet).getCollisionShape(world, feet).isEmpty()) continue;
-                    BlockPos head = feet.up();
-                    if (!world.getBlockState(head).getCollisionShape(world, head).isEmpty()) continue;
-
-                    net.minecraft.util.math.Box target = new net.minecraft.util.math.Box(
-                        feet.getX() + 0.2, feet.getY(), feet.getZ() + 0.2,
-                        feet.getX() + 0.8, feet.getY() + 1.8, feet.getZ() + 0.8);
-                    boolean occupied = world.getPlayers().stream()
-                        .filter(other -> !movingPlayers.contains(other.getUuid()))
-                        .anyMatch(other -> other.getBoundingBox().intersects(target));
-                    if (!occupied) return feet;
+                    for (int dy : verticalOffsets) {
+                        BlockPos floor = new BlockPos(base.getX() + dx, base.getY() + dy, base.getZ() + dz);
+                        BlockPos feet = floor.up();
+                        if (reservedFeet.contains(feet)) continue;
+                        if (!world.getBlockState(floor).isSolidBlock(world, floor)) continue;
+                        if (!world.getBlockState(feet).getCollisionShape(world, feet).isEmpty()) continue;
+                        BlockPos head = feet.up();
+                        if (!world.getBlockState(head).getCollisionShape(world, head).isEmpty()) continue;
+                        net.minecraft.util.math.Box target = new net.minecraft.util.math.Box(
+                            feet.getX() + 0.2, feet.getY(), feet.getZ() + 0.2,
+                            feet.getX() + 0.8, feet.getY() + 1.8, feet.getZ() + 0.8);
+                        boolean occupied = world.getPlayers().stream()
+                            .filter(other -> !movingPlayers.contains(other.getUuid()))
+                            .anyMatch(other -> other.getBoundingBox().intersects(target));
+                        if (!occupied) return feet;
+                    }
                 }
             }
         }
-        // Last-resort fallback when a badly configured spawn has no safe floor around it.
-        for (int i = 0; i < 16; i++) {
-            BlockPos candidate = base.add(i % 4, 1, i / 4);
-            if (!reservedFeet.contains(candidate)) return candidate;
-        }
-        return base.up();
+        return null;
     }
 
     private static ServerWorld resolveWorld(MinecraftServer server, String dimension) {
@@ -881,9 +910,20 @@ public final class ChessGameManager {
         Set<UUID> moving = new HashSet<>();
         members.forEach(p -> moving.add(p.getUuid()));
         Set<BlockPos> reserved = new HashSet<>();
-        for (ServerPlayerEntity member : members) {
+        List<BlockPos> destinations = new ArrayList<>();
+        for (int i = 0; i < members.size(); i++) {
             BlockPos feet = findSafeFeetPosition(destination, target.pos, reserved, moving);
+            if (feet == null) {
+                server.getPlayerManager().broadcast(Text.literal("Не найдено безопасное место появления для команды "
+                    + (white ? "Белые" : "Чёрные") + ". Использована резервная позиция у шахматной доски."), false);
+                return false;
+            }
             reserved.add(feet);
+            destinations.add(feet);
+        }
+        for (int i = 0; i < members.size(); i++) {
+            ServerPlayerEntity member = members.get(i);
+            BlockPos feet = destinations.get(i);
             member.teleport(destination, feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5, target.yaw, target.pitch);
         }
         return true;
@@ -894,11 +934,12 @@ public final class ChessGameManager {
         ChessWorldConfig.SavedPos configuredLobby = ChessWorldConfig.get(server).getLocation("lobby");
         ServerWorld destination = configuredLobby == null ? server.getOverworld()
             : resolveWorld(server, configuredLobby.dimension);
-        if (destination == null) configuredLobby = null;
-        if (destination == null) destination = server.getOverworld();
+        if (destination == null) {
+            configuredLobby = null;
+            destination = server.getOverworld();
+        }
         BlockPos lobby = configuredLobby == null ? destination.getSpawnPos() : configuredLobby.pos;
 
-        // Include all online participants even if team destinations moved them to another dimension.
         Set<UUID> returnIds = new HashSet<>(board(sourceWorld).participants);
         returnIds.addAll(board(sourceWorld).observers);
         returnIds.addAll(board(sourceWorld).pendingWhiteParticipants);
@@ -910,10 +951,20 @@ public final class ChessGameManager {
         Set<UUID> moving = new HashSet<>();
         players.forEach(p -> moving.add(p.getUuid()));
         Set<BlockPos> reserved = new HashSet<>();
-        BoardState state = board(sourceWorld);
-        for (ServerPlayerEntity player : players) {
+        List<BlockPos> destinations = new ArrayList<>();
+        for (int i = 0; i < players.size(); i++) {
             BlockPos feet = findSafeFeetPosition(destination, lobby, reserved, moving);
+            if (feet == null) {
+                server.getPlayerManager().broadcast(Text.literal("Не найдено безопасное место в лобби для всех игроков. Проверь точку лобби."), false);
+                return;
+            }
             reserved.add(feet);
+            destinations.add(feet);
+        }
+        BoardState state = board(sourceWorld);
+        for (int i = 0; i < players.size(); i++) {
+            ServerPlayerEntity player = players.get(i);
+            BlockPos feet = destinations.get(i);
             player.teleport(destination, feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5,
                 configuredLobby == null ? player.getYaw() : configuredLobby.yaw,
                 configuredLobby == null ? player.getPitch() : configuredLobby.pitch);
