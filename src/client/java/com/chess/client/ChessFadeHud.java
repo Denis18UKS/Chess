@@ -27,6 +27,19 @@ public final class ChessFadeHud {
         return active;
     }
 
+    // Compatibility stubs for legacy mixin classes kept in source but no longer registered.
+    // The sole active renderer is GlobalFadeOverlayMixin, which draws above every other layer.
+    @Deprecated
+    public static void beginRenderFrame() {}
+
+    @Deprecated
+    public static boolean wasHudOverlayDrawnThisFrame() {
+        return false;
+    }
+
+    @Deprecated
+    public static void renderHudOverlay(DrawContext context) {}
+
     private static void onClientTick(MinecraftClient client) {
         if (active && client != null && client.options != null) {
             // F1 must not reveal the HUD or change the state to which we restore later.
