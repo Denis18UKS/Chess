@@ -45,7 +45,11 @@ public final class ChessWorldConfig extends PersistentState {
     public SavedPos getLocation(String name) { return locations.get(name); }
 
     public void setLocation(String name, ServerWorld world, BlockPos pos) {
-        locations.put(name, new SavedPos(world.getRegistryKey().getValue().toString(), pos.toImmutable()));
+        setLocation(name, world, pos, 0.0f, 0.0f);
+    }
+
+    public void setLocation(String name, ServerWorld world, BlockPos pos, float yaw, float pitch) {
+        locations.put(name, new SavedPos(world.getRegistryKey().getValue().toString(), pos.toImmutable(), yaw, pitch));
         markDirty();
     }
 
@@ -187,6 +191,8 @@ public final class ChessWorldConfig extends PersistentState {
             item.putString("name", entry.getKey());
             item.putString("dimension", entry.getValue().dimension);
             item.putLong("pos", entry.getValue().pos.asLong());
+            item.putFloat("yaw", entry.getValue().yaw);
+            item.putFloat("pitch", entry.getValue().pitch);
             locationList.add(item);
         }
         nbt.put("locations", locationList);
@@ -243,7 +249,8 @@ public final class ChessWorldConfig extends PersistentState {
         for (int i = 0; i < locationList.size(); i++) {
             NbtCompound item = locationList.getCompound(i);
             config.locations.put(item.getString("name"),
-                new SavedPos(item.getString("dimension"), BlockPos.fromLong(item.getLong("pos"))));
+                new SavedPos(item.getString("dimension"), BlockPos.fromLong(item.getLong("pos")),
+                    item.getFloat("yaw"), item.getFloat("pitch")));
         }
         NbtList bindingList = nbt.getList("bindings", NbtElement.COMPOUND_TYPE);
         for (int i = 0; i < bindingList.size(); i++) {
@@ -289,9 +296,16 @@ public final class ChessWorldConfig extends PersistentState {
     public static final class SavedPos {
         public final String dimension;
         public final BlockPos pos;
+        public final float yaw;
+        public final float pitch;
         public SavedPos(String dimension, BlockPos pos) {
+            this(dimension, pos, 0.0f, 0.0f);
+        }
+        public SavedPos(String dimension, BlockPos pos, float yaw, float pitch) {
             this.dimension = dimension;
             this.pos = pos.toImmutable();
+            this.yaw = yaw;
+            this.pitch = pitch;
         }
     }
 

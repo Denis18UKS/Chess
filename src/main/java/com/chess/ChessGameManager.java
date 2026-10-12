@@ -390,7 +390,7 @@ public final class ChessGameManager {
                         + "Фактическая задержка не меньше длительности затемнения.");
                     return;
                 case "set_spectator":
-                    config.setLocation("spectator", world, pos);
+                    config.setLocation("spectator", world, pos, player.getYaw(), player.getPitch());
                     tell(player, "Точка наблюдения сохранена: " + pos.toShortString());
                     return;
                 case "zone_white_corner_a":
@@ -429,14 +429,18 @@ public final class ChessGameManager {
                         : "Настройки сохранены в мире и применены.");
                     return;
                 case "set_lobby":
-                    config.setLocation("lobby", world, pos);
+                    config.setLocation("lobby", world, pos, player.getYaw(), player.getPitch());
                     tell(player, "Точка лобби сохранена в мире: " + pos.toShortString());
                     return;
                 case "set_tp_white":
-                    setTeleport(world, true, pos);
+                    state.teleportTargets.put("white", pos.toImmutable());
+                    config.setLocation("white", world, pos, player.getYaw(), player.getPitch());
+                    tell(player, "Точка белых сохранена: " + pos.toShortString());
                     return;
                 case "set_tp_black":
-                    setTeleport(world, false, pos);
+                    state.teleportTargets.put("black", pos.toImmutable());
+                    config.setLocation("black", world, pos, player.getYaw(), player.getPitch());
+                    tell(player, "Точка чёрных сохранена: " + pos.toShortString());
                     return;
                 case "bind_command":
                     config.bindBlock(world, pos, a);
@@ -548,7 +552,7 @@ public final class ChessGameManager {
             ServerWorld destination = resolveWorld(player.getServer(), target.dimension);
             if (destination != null) {
                 player.teleport(destination, target.pos.getX() + 0.5, target.pos.getY() + 1.0,
-                    target.pos.getZ() + 0.5, player.getYaw(), player.getPitch());
+                    target.pos.getZ() + 0.5, target.yaw, target.pitch);
                 return;
             }
         }
@@ -792,7 +796,8 @@ public final class ChessGameManager {
         Set<UUID> moving = Set.of(player.getUuid());
         BlockPos feet = findSafeFeetPosition(destination, lobby, new HashSet<>(), moving);
         player.teleport(destination, feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5,
-            player.getYaw(), player.getPitch());
+            configuredLobby == null ? player.getYaw() : configuredLobby.yaw,
+            configuredLobby == null ? player.getPitch() : configuredLobby.pitch);
     }
 
     /**
@@ -856,8 +861,7 @@ public final class ChessGameManager {
         for (ServerPlayerEntity member : members) {
             BlockPos feet = findSafeFeetPosition(destination, target.pos, reserved, moving);
             reserved.add(feet);
-            member.teleport(destination, feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5,
-                member.getYaw(), member.getPitch());
+            member.teleport(destination, feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5, target.yaw, target.pitch);
         }
         return true;
     }
@@ -887,7 +891,8 @@ public final class ChessGameManager {
             BlockPos feet = findSafeFeetPosition(destination, lobby, reserved, moving);
             reserved.add(feet);
             player.teleport(destination, feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5,
-                player.getYaw(), player.getPitch());
+                configuredLobby == null ? player.getYaw() : configuredLobby.yaw,
+                configuredLobby == null ? player.getPitch() : configuredLobby.pitch);
             player.getCommandTags().remove("chess_lobby_return");
             GameMode oldMode = state.observerOriginalModes.remove(player.getUuid());
             player.changeGameMode(oldMode == null || oldMode == GameMode.SPECTATOR ? GameMode.ADVENTURE : oldMode);
