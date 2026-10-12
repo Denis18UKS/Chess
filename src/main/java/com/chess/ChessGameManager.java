@@ -779,12 +779,53 @@ public final class ChessGameManager {
     }
 
     private static void teleportPlayerToLobby(ServerPlayerEntity player) {
-        ChessWorldConfig.SavedPos lobby = ChessWorldConfig.get(player.getServer()).getLocation("lobby");
-        if (lobby == null) return;
-        ServerWorld destination = resolveWorld(player.getServer(), lobby.dimension);
-        if (destination == null) return;
-        player.teleport(destination, lobby.pos.getX() + 0.5, lobby.pos.getY() + 1.0, lobby.pos.getZ() + 0.5,
+        MinecraftServer server = player.getServer();
+        if (server == null) return;
+        ChessWorldConfig.SavedPos configuredLobby = ChessWorldConfig.get(server).getLocation("lobby");
+        ServerWorld destination = configuredLobby == null ? server.getOverworld()
+            : resolveWorld(server, configuredLobby.dimension);
+        if (destination == null) destination = server.getOverworld();
+        BlockPos lobby = configuredLobby == null ? destination.getSpawnPos() : configuredLobby.pos;
+        Set<UUID> moving = Set.of(player.getUuid());
+        BlockPos feet = findSafeFeetPosition(destination, lobby, new HashSet<>(), moving);
+        player.teleport(destination, feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5,
             player.getYaw(), player.getPitch());
+    }
+
+    /**
+     * Find an unoccupied two-block-high position with a solid floor. Player UUIDs in
+     * movingPlayers are being relocated in the same batch and are handled by reservedFeet.
+     */
+    private static BlockPos findSafeFeetPosition(ServerWorld world, BlockPos base,
+                                                  Set<BlockPos> reservedFeet, Set<UUID> movingPlayers) {
+        for (int radius = 0; radius <= 10; radius++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) continue;
+                    BlockPos feet = new BlockPos(base.getX() + dx, base.getY() + 1, base.getZ() + dz);
+                    if (reservedFeet.contains(feet)) continue;
+                    BlockPos floor = feet.down();
+                    if (!world.getBlockState(floor).isSolidBlock(world, floor)) continue;
+                    if (!world.getBlockState(feet).getCollisionShape(world, feet).isEmpty()) continue;
+                    BlockPos head = feet.up();
+                    if (!world.getBlockState(head).getCollisionShape(world, head).isEmpty()) continue;
+
+                    net.minecraft.util.math.Box target = new net.minecraft.util.math.Box(
+                        feet.getX() + 0.2, feet.getY(), feet.getZ() + 0.2,
+                        feet.getX() + 0.8, feet.getY() + 1.8, feet.getZ() + 0.8);
+                    boolean occupied = world.getPlayers().stream()
+                        .filter(other -> !movingPlayers.contains(other.getUuid()))
+                        .anyMatch(other -> other.getBoundingBox().intersects(target));
+                    if (!occupied) return feet;
+                }
+            }
+        }
+        // Last-resort fallback when a badly configured spawn has no safe floor around it.
+        for (int i = 0; i < 16; i++) {
+            BlockPos candidate = base.add(i % 4, 1, i / 4);
+            if (!reservedFeet.contains(candidate)) return candidate;
+        }
+        return base.up();
     }
 
     private static ServerWorld resolveWorld(MinecraftServer server, String dimension) {
@@ -799,76 +840,56 @@ public final class ChessGameManager {
         MinecraftServer server = callerWorld.getServer();
         String teamName = white ? "white" : "black";
         ChessWorldConfig.SavedPos target = ChessWorldConfig.get(server).getLocation(teamName);
-        if (target == null) {
-            broadcast(callerWorld, "TP-точка команды " + teamName + " не настроена.");
-            return false;
-        }
+        if (target == null) return false;
         ServerWorld destination = resolveWorld(server, target.dimension);
-        if (destination == null) {
-            broadcast(callerWorld, "Измерение TP-точки команды " + teamName + " недоступно.");
-            return false;
-        }
+        if (destination == null) return false;
         List<ServerPlayerEntity> members = server.getPlayerManager().getPlayerList().stream()
             .filter(p -> p.getScoreboardTeam() != null && p.getScoreboardTeam().getName().equals(teamName))
-            .toList();
+            .sorted(java.util.Comparator.comparing(p -> p.getUuid().toString())).toList();
         if (members.isEmpty()) return false;
-        String tag = "chess_tp_spread_" + teamName;
+        Set<UUID> moving = new HashSet<>();
+        members.forEach(p -> moving.add(p.getUuid()));
+        Set<BlockPos> reserved = new HashSet<>();
         for (ServerPlayerEntity member : members) {
-            member.addCommandTag(tag);
-            member.teleport(destination, target.pos.getX() + 0.5, target.pos.getY() + 1.0, target.pos.getZ() + 0.5,
+            BlockPos feet = findSafeFeetPosition(destination, target.pos, reserved, moving);
+            reserved.add(feet);
+            member.teleport(destination, feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5,
                 member.getYaw(), member.getPitch());
         }
-        spreadTaggedPlayers(server, destination, target.pos, tag, Math.max(8, members.size() * 3));
-        members.forEach(p -> p.getCommandTags().remove(tag));
         return true;
-    }
-
-    private static void spreadTaggedPlayers(MinecraftServer server, ServerWorld world, BlockPos center,
-                                            String tag, int range) {
-        String command = "spreadplayers " + (center.getX() + 0.5) + " " + (center.getZ() + 0.5)
-            + " 1.5 " + Math.max(4, range) + " false @a[tag=" + tag + "]";
-        try {
-            server.getCommandManager().executeWithPrefix(server.getCommandSource()
-                .withWorld(world).withPosition(new Vec3d(center.getX() + 0.5, center.getY() + 1.0, center.getZ() + 0.5))
-                .withLevel(4), command);
-        } catch (RuntimeException exception) {
-            server.getPlayerManager().broadcast(Text.literal("Не удалось распределить игроков: " + exception.getMessage()), false);
-        }
     }
 
     private static void teleportAllToLobby(ServerWorld sourceWorld) {
         MinecraftServer server = sourceWorld.getServer();
-        ChessWorldConfig.SavedPos lobby = ChessWorldConfig.get(server).getLocation("lobby");
-        if (lobby == null) {
-            broadcast(sourceWorld, "Возврат в лобби пропущен: точка лобби не настроена.");
-            return;
-        }
-        ServerWorld destination = resolveWorld(server, lobby.dimension);
-        if (destination == null) {
-            broadcast(sourceWorld, "Возврат в лобби пропущен: измерение лобби недоступно.");
-            return;
-        }
-        // Return every online match participant even if they were moved to a separate
-        // dimension by a configured team TP. Also return observers who stayed at the board.
+        ChessWorldConfig.SavedPos configuredLobby = ChessWorldConfig.get(server).getLocation("lobby");
+        ServerWorld destination = configuredLobby == null ? server.getOverworld()
+            : resolveWorld(server, configuredLobby.dimension);
+        BlockPos lobby = configuredLobby == null ? destination.getSpawnPos() : configuredLobby.pos;
+        if (destination == null) return;
+
+        // Include all online participants even if team destinations moved them to another dimension.
         Set<UUID> returnIds = new HashSet<>(board(sourceWorld).participants);
         returnIds.addAll(board(sourceWorld).observers);
+        returnIds.addAll(board(sourceWorld).pendingWhiteParticipants);
+        returnIds.addAll(board(sourceWorld).pendingBlackParticipants);
         for (ServerPlayerEntity player : sourceWorld.getPlayers()) returnIds.add(player.getUuid());
         List<ServerPlayerEntity> players = server.getPlayerManager().getPlayerList().stream()
-            .filter(player -> returnIds.contains(player.getUuid())).toList();
-        String tag = "chess_lobby_return";
+            .filter(player -> returnIds.contains(player.getUuid()))
+            .sorted(java.util.Comparator.comparing(player -> player.getUuid().toString())).toList();
+        Set<UUID> moving = new HashSet<>();
+        players.forEach(p -> moving.add(p.getUuid()));
+        Set<BlockPos> reserved = new HashSet<>();
+        BoardState state = board(sourceWorld);
         for (ServerPlayerEntity player : players) {
-            player.addCommandTag(tag);
-            player.teleport(destination, lobby.pos.getX() + 0.5, lobby.pos.getY() + 1.0, lobby.pos.getZ() + 0.5,
+            BlockPos feet = findSafeFeetPosition(destination, lobby, reserved, moving);
+            reserved.add(feet);
+            player.teleport(destination, feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5,
                 player.getYaw(), player.getPitch());
+            player.getCommandTags().remove("chess_lobby_return");
+            GameMode oldMode = state.observerOriginalModes.remove(player.getUuid());
+            player.changeGameMode(oldMode == null || oldMode == GameMode.SPECTATOR ? GameMode.ADVENTURE : oldMode);
+            ChessNetwork.sendSpectatorState(player, false, state.whiteTurn);
         }
-        spreadTaggedPlayers(server, destination, lobby.pos, tag, Math.max(8, players.size() * 3));
-        players.forEach(p -> {
-            p.getCommandTags().remove(tag);
-            BoardState state = board(sourceWorld);
-            GameMode oldMode = state.observerOriginalModes.remove(p.getUuid());
-            p.changeGameMode(oldMode == null ? GameMode.ADVENTURE : oldMode);
-            ChessNetwork.sendSpectatorState(p, false, state.whiteTurn);
-        });
     }
 
     private static void updateTurnGlow(ServerWorld world, BoardState state) {

@@ -16,6 +16,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.shape.VoxelShape;
+import net.minecraft.util.shape.VoxelShapes;
 import net.minecraft.world.BlockView;
 import net.minecraft.world.World;
 
@@ -23,8 +24,13 @@ public class ChessFigureBlock extends BlockWithEntity {
     // Figure blocks are located one block above a 2px-high board tile.
     // Renderer moves only the visual model down to the tile surface; the
     // invisible block entity itself keeps the board's logical coordinates.
-    private static final VoxelShape OUTLINE = createCuboidShape(3, -14, 3, 13, 6, 13);
-    private static final VoxelShape RAYCAST_HITBOX = createCuboidShape(1, -14, 1, 15, 16, 15);
+    // A stepped proxy follows the visible model: broad pedestal, narrower body and a
+    // compact upper section. Unlike the former full-block ray/collision box, this avoids
+    // snagging players on invisible air around the figure.
+    private static final VoxelShape OUTLINE = VoxelShapes.union(
+        createCuboidShape(2, -14, 2, 14, -9, 14),
+        createCuboidShape(4, -9, 4, 12, 7, 12),
+        createCuboidShape(3, 7, 3, 13, 15, 13));
 
     public ChessFigureBlock(Settings settings) { super(settings.nonOpaque()); }
 
@@ -54,16 +60,12 @@ public class ChessFigureBlock extends BlockWithEntity {
 
     @Override
     public VoxelShape getRaycastShape(BlockState state, BlockView world, BlockPos pos) {
-        // Use a generous ray-only volume over the whole rendered model. The visible
-        // outline remains tight, and the collision shape remains empty.
-        return RAYCAST_HITBOX;
+        return OUTLINE;
     }
 
     @Override
     public VoxelShape getCollisionShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
-        // Make the full visible figure physically solid. The volume intentionally extends
-        // below/above the logical block position to align with the model rendered on the tile.
-        return RAYCAST_HITBOX;
+        return OUTLINE;
     }
 
     private static int dyeRgb(net.minecraft.util.DyeColor color) {
