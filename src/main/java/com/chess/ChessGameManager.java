@@ -1494,12 +1494,13 @@ public final class ChessGameManager {
             player.sendMessage(Text.literal("Лоток срубленных фигур уже заполнен."), false);
             return false;
         }
-        // A white player trades from the white captures tray (black figure stock); black analogously uses white pieces.
-        char symbol = white ? Character.toLowerCase(kind) : kind;
+        // This is a test reserve of the same team as the tray: white pieces in white's tray,
+        // black pieces in black's tray.
+        char symbol = white ? kind : Character.toLowerCase(kind);
         registerCapturedPiece(player.getServerWorld(), state, symbol, white);
         ChessNetwork.broadcastBoard(player.getServerWorld());
-        player.sendMessage(Text.literal("DEV: в лоток " + (white ? "белых" : "чёрных")
-            + " добавлена запасная фигура для превращения: " + token + "."), false);
+        player.sendMessage(Text.literal("DEV: в собственный лоток " + (white ? "белых" : "чёрных")
+            + " добавлена снятая фигура для обмена при превращении: " + token + "."), false);
         return true;
     }
 
@@ -1590,19 +1591,32 @@ public final class ChessGameManager {
         world.setBlockState(tray.add(index % 8, 1, index / 8), type.block().getDefaultState(), 3);
     }
 
-    private static void registerCapturedPiece(ServerWorld world, BoardState state, char symbol, boolean capturerWhite) {
-        if (ChessPieceType.fromSymbol(symbol) == null) return;
-        List<Character> pieces = capturerWhite ? state.whiteCapturedPieces : state.blackCapturedPieces;
+    private static void registerCapturedPiece(ServerWorld world, BoardState state, char symbol, boolean unusedCapturerWhite) {
+        ChessPieceType capturedType = ChessPieceType.fromSymbol(symbol);
+        if (capturedType == null) return;
+        boolean capturedWhite = capturedType.isWhite();
+        List<Character> pieces = capturedWhite ? state.whiteCapturedPieces : state.blackCapturedPieces;
         if (pieces.size() >= 32) return;
         pieces.add(symbol);
         if (state.whiteCaptureOrigin == null || state.blackCaptureOrigin == null) autoConfigureCaptures(world, state);
-        placeCapturedBlock(world, capturerWhite ? state.whiteCaptureOrigin : state.blackCaptureOrigin, pieces.size() - 1, symbol);
+        BlockPos ownerTray = capturedWhite ? state.whiteCaptureOrigin : state.blackCaptureOrigin;
+        placeCapturedBlock(world, ownerTray, pieces.size() - 1, symbol);
     }
 
     public static String promotionOptions(BoardState state, boolean white) {
-        // Standard chess allows repeated promotions. The pawn itself is the source piece;
-        // a captured piece of the selected type is a visual reserve, not a prerequisite.
-        return "QRBN";
+        List<Character> ownCaptured = white ? state.whiteCapturedPieces : state.blackCapturedPieces;
+        StringBuilder available = new StringBuilder();
+        for (char symbol : ownCaptured) {
+            ChessPieceType type = ChessPieceType.fromSymbol(symbol);
+            if (type == null || type.isWhite() != white) continue;
+            char kind = Character.toUpperCase(symbol);
+            if ("QRBN".indexOf(kind) >= 0 && available.indexOf(String.valueOf(kind)) < 0)
+                available.append(kind);
+        }
+        StringBuilder ordered = new StringBuilder();
+        for (char kind : "QRBN".toCharArray())
+            if (available.indexOf(String.valueOf(kind)) >= 0) ordered.append(kind);
+        return ordered.toString();
     }
 
     public static void choosePromotion(ServerPlayerEntity player, String choice) {
@@ -1620,27 +1634,17 @@ public final class ChessGameManager {
         }
         List<Character> captured = state.promotionWhite ? state.whiteCapturedPieces : state.blackCapturedPieces;
         int capturedIndex = -1;
-        // Prefer a reserve matching the selected type. If it was not previously captured,
-        // use another captured figure as the physical reserve; the reserve need not be a queen
-        // for the pawn to become a queen. If the tray has no enemy pieces at all, transform
-        // the pawn in place without adding a duplicate model to the tray.
         for (int i = 0; i < captured.size(); i++) {
             ChessPieceType candidate = ChessPieceType.fromSymbol(captured.get(i));
-            if (candidate != null && candidate.isWhite() != state.promotionWhite
+            if (candidate != null && candidate.isWhite() == state.promotionWhite
                 && Character.toUpperCase(captured.get(i)) == kind) {
                 capturedIndex = i;
                 break;
             }
         }
         if (capturedIndex < 0) {
-            for (int i = 0; i < captured.size(); i++) {
-                ChessPieceType candidate = ChessPieceType.fromSymbol(captured.get(i));
-                if (candidate != null && candidate.isWhite() != state.promotionWhite
-                    && Character.toUpperCase(captured.get(i)) != 'K') {
-                    capturedIndex = i;
-                    break;
-                }
-            }
+            tell(player, "В лотке своей команды нет снятой фигуры этого типа. Лишнюю фигуру создать нельзя.");
+            return;
         }
         char symbol = state.promotionWhite ? kind : Character.toLowerCase(kind);
         char pawnSymbol = state.promotionWhite ? 'P' : 'p';
@@ -2365,22 +2369,13 @@ public final class ChessGameManager {
         int capturedIndex = -1;
         for (int i = 0; i < captured.size(); i++) {
             ChessPieceType candidate = ChessPieceType.fromSymbol(captured.get(i));
-            if (candidate != null && candidate.isWhite() != white
+            if (candidate != null && candidate.isWhite() == white
                 && Character.toUpperCase(captured.get(i)) == kind) {
                 capturedIndex = i;
                 break;
             }
         }
-        if (capturedIndex < 0) {
-            for (int i = 0; i < captured.size(); i++) {
-                ChessPieceType candidate = ChessPieceType.fromSymbol(captured.get(i));
-                if (candidate != null && candidate.isWhite() != white
-                    && Character.toUpperCase(captured.get(i)) != 'K') {
-                    capturedIndex = i;
-                    break;
-                }
-            }
-        }
+        if (capturedIndex < 0) return;
         BlockPos pos = piecePos(state, row, col);
         float yaw = world.getBlockEntity(pos) instanceof ChessFigureBlockEntity entity ? entity.getYawDegrees() : 0.0f;
         char promotedSymbol = white ? kind : Character.toLowerCase(kind);
