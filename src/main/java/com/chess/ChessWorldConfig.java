@@ -34,6 +34,9 @@ public final class ChessWorldConfig extends PersistentState {
     private int teleportDelayTicks = 14;
     private int lobbyDelaySeconds = 20;
     private int matchDurationMinutes = 0;
+    // 0=off, 1=temporary (only after turn changes), 2=permanent while a match is active.
+    private int turnHudMode = 2;
+    private boolean triggerZonesVisible;
     private ChessGameManager.MatchMode matchMode = ChessGameManager.MatchMode.ONE_ONE;
     private ChessGameManager.RuleMode ruleMode = ChessGameManager.RuleMode.REALISM;
 
@@ -90,6 +93,18 @@ public final class ChessWorldConfig extends PersistentState {
 
     public void setMatchMode(ChessGameManager.MatchMode mode) {
         matchMode = mode == null ? ChessGameManager.MatchMode.ONE_ONE : mode;
+        markDirty();
+    }
+
+    public int getTurnHudMode() { return turnHudMode; }
+    public void setTurnHudMode(int mode) {
+        turnHudMode = Math.max(0, Math.min(2, mode));
+        markDirty();
+    }
+
+    public boolean areTriggerZonesVisible() { return triggerZonesVisible; }
+    public void setTriggerZonesVisible(boolean visible) {
+        triggerZonesVisible = visible;
         markDirty();
     }
 
@@ -238,6 +253,8 @@ public final class ChessWorldConfig extends PersistentState {
         nbt.putInt("teleportDelayTicks", teleportDelayTicks);
         nbt.putInt("lobbyDelaySeconds", lobbyDelaySeconds);
         nbt.putInt("matchDurationMinutes", matchDurationMinutes);
+        nbt.putInt("turnHudMode", turnHudMode);
+        nbt.putBoolean("triggerZonesVisible", triggerZonesVisible);
         nbt.putString("matchMode", matchMode.name());
         nbt.putString("ruleMode", ruleMode.name());
         return nbt;
@@ -286,6 +303,8 @@ public final class ChessWorldConfig extends PersistentState {
         if (nbt.contains("teleportDelayTicks")) config.teleportDelayTicks = Math.max(0, Math.min(200, nbt.getInt("teleportDelayTicks")));
         if (nbt.contains("lobbyDelaySeconds")) config.lobbyDelaySeconds = Math.max(0, Math.min(3600, nbt.getInt("lobbyDelaySeconds")));
         if (nbt.contains("matchDurationMinutes")) config.matchDurationMinutes = Math.max(0, Math.min(1440, nbt.getInt("matchDurationMinutes")));
+        if (nbt.contains("turnHudMode")) config.turnHudMode = Math.max(0, Math.min(2, nbt.getInt("turnHudMode")));
+        if (nbt.contains("triggerZonesVisible")) config.triggerZonesVisible = nbt.getBoolean("triggerZonesVisible");
         try { config.matchMode = ChessGameManager.MatchMode.valueOf(nbt.getString("matchMode")); }
         catch (IllegalArgumentException ignored) {}
         try { config.ruleMode = ChessGameManager.RuleMode.valueOf(nbt.getString("ruleMode")); }

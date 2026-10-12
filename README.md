@@ -36,12 +36,12 @@ Players who are not participating in an active match are sent to the lobby on jo
 
 ### Spectators
 
-Players already online in the lobby when a match starts and who are not in its roster are automatically forced to spectate. Players who join while a match is already running remain in the lobby until they opt in. Press **O** (rebindable in Minecraft Controls) or use `/chess spectate` to toggle viewing. The spectator HUD shows **«Ход белых»** or **«Ход чёрных»**. Spectators are never members of either chess team.
+Players already online in the lobby when a match starts and who are not in its roster are automatically forced to spectate. Participants are placed in Adventure mode for the active match; observers remain in Spectator mode. Players who join while a match is already running remain in the lobby until they opt in. Press **O** (rebindable in Minecraft Controls) or use `/chess spectate` to toggle viewing. Turn state is shown in the action bar (configure it with `/chess turnhud permanent|temporary|off`); turn announcements are not repeated in chat. Spectators are never members of either chess team.
 
 ### Fade and team zones
 
 - Use the **Fade & Teleport Configurator** item to set the fade duration and delay until teleportation. The delay is clamped to at least the fade-out duration so a player is not moved before the screen has gone black.
-- Use **Настройщик триггерных областей**: open it on corner A and save it, then open the tool on corner B and create the zone. It also has dedicated A/B controls for the white and black side-selection areas. Entering a side zone preselects that side outside a match; it does not add a scoreboard member or start a game by itself.
+- Use **Настройщик триггерных областей** or WorldEdit-style commands `/chess zone pos1 <x> <y> <z>` and `/chess zone pos2 <x> <y> <z> <имя>`. Toggle the zone boundary display with `/chess zones show|hide|toggle`. It also has dedicated A/B controls for the white and black side-selection areas. Entering a side zone preselects that side outside a match; it does not add a scoreboard member or start a game by itself.
 - Scoreboard teams keep their internal IDs `white` / `black`, but their displayed names are localized as colored **Белые** / **Чёрные**.
 
 ## Set up an arena

@@ -155,8 +155,8 @@ public final class ChessGameManager {
                     : state.matchMode == MatchMode.ONE_VS_BOT ? "vs_bot нужен 1 игрок, выбравший белых."
                     : "1v1 нужны 1 белый и 1 чёрный.")
                 + " Выбери сторону через /chess white или /chess black.";
-            showServerTitle(world.getServer(), "Недостаточно игроков");
-            broadcast(world, reason);
+            showServerTitle(world.getServer(), "Недостаточно игроков", Formatting.RED);
+            // The caller reports the single detailed error. Do not also broadcast it to chat.
             throw new IllegalStateException(reason);
         }
 
@@ -224,8 +224,12 @@ public final class ChessGameManager {
         }
         autoConfigureCaptures(world, state);
         broadcast(world, state.matchMode == MatchMode.ONE_VS_BOT
-            ? "Шахматная партия началась: ты играешь против бота. Первый ход — белые."
-            : "Шахматная партия началась. Первый ход — белые.");
+            ? "Шахматная партия началась: ты играешь против бота."
+            : "Шахматная партия началась.");
+        broadcast(world, state.threeDimensional
+            ? "Управление 3D: ПКМ по своей фигуре, затем ПКМ по клетке назначения."
+            : "Управление 2D: выбери свою фигуру на шахматной доске, затем нажми клетку назначения.");
+        showTurnActionbar(world, state, true);
         updateTeamHighlights(world.getServer(), state);
         updateTurnGlow(world, state);
         syncAllTeamPieces(world.getServer());
@@ -475,7 +479,11 @@ public final class ChessGameManager {
                     tell(player, "Неизвестное действие конфигуратора: " + action);
             }
         } catch (IllegalStateException exception) {
-            tell(player, exception.getMessage());
+            if (exception.getMessage() != null && exception.getMessage().startsWith("Недостаточно игроков")) {
+                player.sendMessage(Text.literal(exception.getMessage()).formatted(Formatting.RED), false);
+            } else {
+                tell(player, exception.getMessage());
+            }
         }
     }
 
@@ -601,12 +609,14 @@ public final class ChessGameManager {
                 state.pendingBlackParticipants.clear();
                 state.observers.clear();
                 state.observerOriginalModes.clear();
-                showServerTitle(server, "Недостаточно игроков");
+                showServerTitle(server, "Недостаточно игроков", Formatting.RED);
                 broadcast(world, "Недостаточно игроков. Запуск партии отменён.");
                 continue;
             }
             if (state.countdownRemaining > 0) {
-                showServerTitle(server, Integer.toString(state.countdownRemaining));
+                Formatting countdownColor = state.countdownRemaining == 3 ? Formatting.RED
+                    : state.countdownRemaining == 2 ? Formatting.YELLOW : Formatting.GREEN;
+                showServerTitle(server, Integer.toString(state.countdownRemaining), countdownColor);
                 state.countdownRemaining--;
                 state.countdownNextTick = tick + 20L;
                 continue;
@@ -633,6 +643,7 @@ public final class ChessGameManager {
                 if (selected != null) {
                     clearChessTeam(server, selected);
                     scoreboard.addPlayerToTeam(selected.getEntityName(), white);
+                    selected.changeGameMode(GameMode.ADVENTURE);
                 }
             }
             for (UUID id : state.pendingBlackParticipants) {
@@ -640,6 +651,7 @@ public final class ChessGameManager {
                 if (selected != null) {
                     clearChessTeam(server, selected);
                     scoreboard.addPlayerToTeam(selected.getEntityName(), black);
+                    selected.changeGameMode(GameMode.ADVENTURE);
                 }
             }
 
@@ -695,8 +707,12 @@ public final class ChessGameManager {
     }
 
     private static void showServerTitle(MinecraftServer server, String message) {
+        showServerTitle(server, message, Formatting.WHITE);
+    }
+
+    private static void showServerTitle(MinecraftServer server, String message, Formatting color) {
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            player.networkHandler.sendPacket(new TitleS2CPacket(Text.literal(message)));
+            player.networkHandler.sendPacket(new TitleS2CPacket(Text.literal(message).formatted(color)));
         }
     }
 
@@ -1000,6 +1016,47 @@ public final class ChessGameManager {
             server.getCommandManager().executeWithPrefix(source, ChessWorldConfig.cleanCommand(command));
         } catch (RuntimeException exception) {
             player.sendMessage(Text.literal("Команда триггера не выполнена: " + exception.getMessage()), false);
+        }
+    }
+
+    private static void renderTriggerZoneOutlines(MinecraftServer server) {
+        ChessWorldConfig config = ChessWorldConfig.get(server);
+        if (!config.areTriggerZonesVisible()) return;
+        for (ServerWorld world : server.getWorlds()) {
+            String dimension = world.getRegistryKey().getValue().toString();
+            for (ChessWorldConfig.TriggerZone zone : config.getZones()) {
+                if (!dimension.equals(zone.dimension)) continue;
+                double minX = Math.min(zone.a.getX(), zone.b.getX());
+                double maxX = Math.max(zone.a.getX(), zone.b.getX()) + 1.0;
+                double minY = Math.min(zone.a.getY(), zone.b.getY());
+                double maxY = Math.max(zone.a.getY(), zone.b.getY()) + 2.0;
+                double minZ = Math.min(zone.a.getZ(), zone.b.getZ());
+                double maxZ = Math.max(zone.a.getZ(), zone.b.getZ()) + 1.0;
+                renderZoneEdge(world, minX, minY, minZ, maxX, minY, minZ);
+                renderZoneEdge(world, minX, minY, maxZ, maxX, minY, maxZ);
+                renderZoneEdge(world, minX, maxY, minZ, maxX, maxY, minZ);
+                renderZoneEdge(world, minX, maxY, maxZ, maxX, maxY, maxZ);
+                renderZoneEdge(world, minX, minY, minZ, minX, minY, maxZ);
+                renderZoneEdge(world, maxX, minY, minZ, maxX, minY, maxZ);
+                renderZoneEdge(world, minX, maxY, minZ, minX, maxY, maxZ);
+                renderZoneEdge(world, maxX, maxY, minZ, maxX, maxY, maxZ);
+                renderZoneEdge(world, minX, minY, minZ, minX, maxY, minZ);
+                renderZoneEdge(world, maxX, minY, minZ, maxX, maxY, minZ);
+                renderZoneEdge(world, minX, minY, maxZ, minX, maxY, maxZ);
+                renderZoneEdge(world, maxX, minY, maxZ, maxX, maxY, maxZ);
+            }
+        }
+    }
+
+    private static void renderZoneEdge(ServerWorld world, double x1, double y1, double z1,
+                                       double x2, double y2, double z2) {
+        double distance = Math.max(Math.abs(x2 - x1), Math.max(Math.abs(y2 - y1), Math.abs(z2 - z1)));
+        int steps = Math.max(1, Math.min(24, (int)Math.ceil(distance)));
+        for (int i = 0; i <= steps; i++) {
+            double t = i / (double) steps;
+            world.spawnParticles(net.minecraft.particle.ParticleTypes.END_ROD,
+                x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, z1 + (z2 - z1) * t,
+                1, 0.0, 0.0, 0.0, 0.0);
         }
     }
 
@@ -1379,7 +1436,7 @@ public final class ChessGameManager {
             return;
         }
         if (type.isWhite() != state.whiteTurn) {
-            tell(player, "Сейчас ход " + (state.whiteTurn ? "белых" : "чёрных") + ".");
+            tell(player, "Сейчас очередь другой стороны.");
             return;
         }
         var team = player.getScoreboardTeam();
@@ -1468,7 +1525,7 @@ public final class ChessGameManager {
         updateTurnGlow(world, state);
         if (state.matchMode == MatchMode.ONE_VS_BOT && !state.whiteTurn)
             state.botMoveAtTick = serverTick(world.getServer()) + 20L;
-        broadcast(world, "Ход передан команде " + (state.whiteTurn ? "white" : "black") + ".");
+        announceTurn(world, state);
         ChessNetwork.broadcastSpectatorState(world, state);
         return true;
     }
@@ -1537,7 +1594,7 @@ public final class ChessGameManager {
         }
         // A free-selection mode still alternates turns; only piece movement restrictions are relaxed.
         if (type.isWhite() != state.whiteTurn) {
-            tell(player, "Сейчас ход " + (state.whiteTurn ? "белых" : "чёрных") + ".");
+            tell(player, "Сейчас очередь другой стороны.");
             return;
         }
         if (state.ruleMode == RuleMode.FULL_REALISM && !state.threeDimensional) {
@@ -1618,12 +1675,29 @@ public final class ChessGameManager {
 
     private static void tick(MinecraftServer server) {
         long tick = serverTick(server);
-        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            if (player.interactionManager.getGameMode() == GameMode.SURVIVAL)
-                player.changeGameMode(GameMode.ADVENTURE);
+        if (tick % 20L == 0L) {
+            syncAllTeamPieces(server);
+            for (Map.Entry<RegistryKey<World>, BoardState> entry : BOARDS.entrySet()) {
+                ServerWorld activeWorld = server.getWorld(entry.getKey());
+                BoardState activeState = entry.getValue();
+                if (activeWorld == null || !activeState.running) continue;
+                for (UUID id : activeState.participants) {
+                    ServerPlayerEntity participant = server.getPlayerManager().getPlayer(id);
+                    if (participant != null && participant.interactionManager.getGameMode() != GameMode.ADVENTURE)
+                        participant.changeGameMode(GameMode.ADVENTURE);
+                }
+                for (UUID id : activeState.observers) {
+                    ServerPlayerEntity observer = server.getPlayerManager().getPlayer(id);
+                    if (observer != null && observer.interactionManager.getGameMode() != GameMode.SPECTATOR)
+                        observer.changeGameMode(GameMode.SPECTATOR);
+                }
+                showTurnActionbar(activeWorld, activeState, false);
+            }
         }
-        if (tick % 20L == 0L) syncAllTeamPieces(server);
-        if (tick % 5L == 0L) processTriggerZones(server);
+        if (tick % 5L == 0L) {
+            processTriggerZones(server);
+            if (ChessWorldConfig.get(server).areTriggerZonesVisible()) renderTriggerZoneOutlines(server);
+        }
         processStartCountdowns(server, tick);
         boolean anyMatchActive = BOARDS.values().stream().anyMatch(board -> board.running);
         if (!anyMatchActive && BOARDS.values().stream().noneMatch(board -> board.countdownActive)) {
@@ -1921,8 +1995,22 @@ public final class ChessGameManager {
         ));
     }
 
+    private static void showTurnActionbar(ServerWorld world, BoardState state, boolean force) {
+        if (!state.running) return;
+        int mode = ChessWorldConfig.get(world.getServer()).getTurnHudMode();
+        if (mode == 0 || (mode == 1 && !force)) return;
+        String label = state.whiteTurn ? "ХОД БЕЛЫХ" : "ХОД ЧЁРНЫХ";
+        Formatting color = state.whiteTurn ? Formatting.WHITE : Formatting.GOLD;
+        Set<UUID> recipients = new HashSet<>(state.participants);
+        recipients.addAll(state.observers);
+        for (UUID id : recipients) {
+            ServerPlayerEntity recipient = world.getServer().getPlayerManager().getPlayer(id);
+            if (recipient != null) recipient.sendMessage(Text.literal(label).formatted(color), true);
+        }
+    }
+
     private static void announceTurn(ServerWorld world, BoardState state) {
-        broadcast(world, "Ход " + (state.whiteTurn ? "белых" : "чёрных") + ".");
+        showTurnActionbar(world, state, true);
         ChessNetwork.broadcastSpectatorState(world, state);
     }
 

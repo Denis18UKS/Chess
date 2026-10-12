@@ -1,10 +1,10 @@
 package com.chess.client;
 
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.ChatScreen;
 
-/** Server-timed full-screen fade used to hide teleport transitions. */
+/** Server-timed full-screen fade drawn after the HUD and again above the chat screen. */
 public final class ChessFadeHud {
     private static long startedNanos;
     private static long fadeOutNanos;
@@ -14,9 +14,9 @@ public final class ChessFadeHud {
 
     private ChessFadeHud() {}
 
-    public static void register() {
-        HudRenderCallback.EVENT.register(ChessFadeHud::render);
-    }
+    // Kept as a no-op for the existing client initializer; rendering is injected at render TAIL
+    // so F1 and the chat screen cannot suppress or cover the transition.
+    public static void register() {}
 
     public static void start(int fadeOutTicks, int holdTicks, int fadeInTicks) {
         fadeOutNanos = Math.max(1L, fadeOutTicks) * 50_000_000L;
@@ -26,7 +26,15 @@ public final class ChessFadeHud {
         active = true;
     }
 
-    private static void render(DrawContext context, float tickDelta) {
+    /** Called at the very end of HUD rendering. The regular HUD may be hidden by F1, but this hook still runs. */
+    public static void renderHudOverlay(DrawContext context) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client != null && client.currentScreen instanceof ChatScreen) return;
+        renderOverlay(context);
+    }
+
+    /** Draw above chat when chat is open, instead of letting chat panels cut through the fade. */
+    public static void renderOverlay(DrawContext context) {
         if (!active) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.getWindow() == null) {
@@ -42,17 +50,12 @@ public final class ChessFadeHud {
             return;
         }
         double alpha;
-        if (elapsed < fadeEnd) {
-            alpha = elapsed / (double) fadeOutNanos;
-        } else if (elapsed < holdEnd) {
-            alpha = 1.0;
-        } else {
-            alpha = 1.0 - (elapsed - holdEnd) / (double) fadeInNanos;
-        }
+        if (elapsed < fadeEnd) alpha = elapsed / (double) fadeOutNanos;
+        else if (elapsed < holdEnd) alpha = 1.0;
+        else alpha = 1.0 - (elapsed - holdEnd) / (double) fadeInNanos;
         int opacity = (int) Math.max(0, Math.min(255, Math.round(alpha * 255.0)));
         if (opacity <= 0) return;
-        int width = client.getWindow().getScaledWidth();
-        int height = client.getWindow().getScaledHeight();
-        context.fill(0, 0, width, height, (opacity << 24));
+        context.fill(0, 0, client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight(),
+            (opacity << 24));
     }
 }
