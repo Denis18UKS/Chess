@@ -27,6 +27,8 @@ public final class ChessNetwork {
     public static final Identifier ADMIN_STATE = ChessMod.id("admin_state");
     public static final Identifier SPECTATE_TOGGLE = ChessMod.id("spectate_toggle");
     public static final Identifier SPECTATOR_STATE = ChessMod.id("spectator_state");
+    public static final Identifier FADE_TRANSITION = ChessMod.id("fade_transition");
+    public static final Identifier FADE_SETTINGS_STATE = ChessMod.id("fade_settings_state");
 
     private ChessNetwork() {}
 
@@ -35,6 +37,19 @@ public final class ChessNetwork {
             server.execute(() -> sendBoard(player)));
         ServerPlayNetworking.registerGlobalReceiver(SPECTATE_TOGGLE, (server, player, handler, buf, responseSender) ->
             server.execute(() -> ChessGameManager.toggleSpectating(player)));
+        ServerPlayNetworking.registerGlobalReceiver(FADE_TRANSITION, (server, player, handler, buf, responseSender) ->
+            server.execute(() -> {
+                if (player.getCommandSource().hasPermissionLevel(2)) {
+                    int fadeTicks = Math.max(2, Math.min(100, buf.readInt()));
+                    int delayTicks = Math.max(0, Math.min(200, buf.readInt()));
+                    ChessWorldConfig config = ChessWorldConfig.get(server);
+                    config.setFadeDurationTicks(fadeTicks);
+                    config.setTeleportDelayTicks(delayTicks);
+                    player.sendMessage(net.minecraft.text.Text.literal("Fade сохранён: "
+                        + String.format(java.util.Locale.ROOT, "%.1f", fadeTicks * 0.05) + " с; задержка телепортации "
+                        + String.format(java.util.Locale.ROOT, "%.1f", delayTicks * 0.05) + " с."), false);
+                }
+            }));
         ServerPlayNetworking.registerGlobalReceiver(ADMIN_ACTION, (server, player, handler, buf, responseSender) -> {
             String action = buf.readString(64);
             BlockPos pos = buf.readBlockPos();
@@ -101,6 +116,21 @@ public final class ChessNetwork {
             ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(uuid);
             if (player != null) sendSpectatorState(player, state.running, state.whiteTurn);
         }
+    }
+
+    public static void sendFadeSettings(ServerPlayerEntity player, ChessWorldConfig config) {
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeInt(config.getFadeDurationTicks());
+        buf.writeInt(config.getTeleportDelayTicks());
+        ServerPlayNetworking.send(player, FADE_SETTINGS_STATE, buf);
+    }
+
+    public static void sendFadeTransition(ServerPlayerEntity player, int fadeOutTicks, int holdTicks, int fadeInTicks) {
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeInt(fadeOutTicks);
+        buf.writeInt(holdTicks);
+        buf.writeInt(fadeInTicks);
+        ServerPlayNetworking.send(player, FADE_TRANSITION, buf);
     }
 
     public static void sendBoard(ServerPlayerEntity player) {
