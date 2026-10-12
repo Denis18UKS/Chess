@@ -1303,7 +1303,7 @@ public final class ChessGameManager {
     }
 
     private static void clearCaptureTray(ServerWorld world, BlockPos tray) {
-        for (int row = 0; row < 4; row++) for (int col = 0; col < 8; col++) {
+        for (int row = 0; row < 2; row++) for (int col = 0; col < 8; col++) {
             BlockPos piece = tray.add(col, 1, row);
             if (ChessPieceType.fromBlock(world.getBlockState(piece)) != null)
                 world.setBlockState(piece, Blocks.AIR.getDefaultState(), 3);
@@ -1490,7 +1490,7 @@ public final class ChessGameManager {
             return false;
         }
         List<Character> stock = white ? state.whiteCapturedPieces : state.blackCapturedPieces;
-        if (stock.size() >= 32) {
+        if (stock.size() >= 16) {
             player.sendMessage(Text.literal("Лоток срубленных фигур уже заполнен."), false);
             return false;
         }
@@ -1556,18 +1556,30 @@ public final class ChessGameManager {
     private static void autoConfigureCaptures(ServerWorld world, BoardState state) {
         if (!state.configured) return;
         // Black pieces start on rows 0-1; white pieces start on rows 6-7.
-        // Captures belong on the capturer's own side: white at the far (south) end, black at the near (north) end.
+        // Captured pieces stay in a tray of their own color. The main board spans Z=0..7:
+        // white's 8x2 tray starts at Z=10, black's at Z=-4. This leaves two empty blocks
+        // between each tray and the main 8x8 board.
         state.whiteCaptureOrigin = state.origin.add(0, 0, 10);
         state.blackCaptureOrigin = state.origin.add(0, 0, -4);
-        // Remove stale figure blocks from earlier rounds before rebuilding the stock trays.
+
+        // Remove figures from the old 8x4 layout. Clear its extra two tile rows as well,
+        // otherwise they remain as disconnected/overlapping "ghost" pieces of board.
         for (BlockPos tray : List.of(state.whiteCaptureOrigin, state.blackCaptureOrigin)) {
             for (int index = 0; index < 32; index++) {
                 BlockPos slot = tray.add(index % 8, 1, index / 8);
                 if (ChessPieceType.fromBlock(world.getBlockState(slot)) != null)
                     world.setBlockState(slot, Blocks.AIR.getDefaultState(), 3);
             }
+            for (int row = 2; row < 4; row++) for (int col = 0; col < 8; col++) {
+                BlockPos oldTile = tray.add(col, 0, row);
+                BlockState oldState = world.getBlockState(oldTile);
+                if (oldState.isOf(ModBlocks.CHESS_WHITE_SQUARE) || oldState.isOf(ModBlocks.CHESS_BLACK_SQUARE))
+                    world.setBlockState(oldTile, Blocks.AIR.getDefaultState(), 3);
+            }
         }
-        for (int row = 0; row < 4; row++) for (int col = 0; col < 8; col++) {
+
+        // Both capture trays are exactly 8x2 (16 slots).
+        for (int row = 0; row < 2; row++) for (int col = 0; col < 8; col++) {
             BlockPos whiteTile = state.whiteCaptureOrigin.add(col, 0, row);
             BlockPos blackTile = state.blackCaptureOrigin.add(col, 0, row);
             if (isAirOrChessTile(world.getBlockState(whiteTile)))
@@ -1587,7 +1599,7 @@ public final class ChessGameManager {
 
     private static void placeCapturedBlock(ServerWorld world, BlockPos tray, int index, char symbol) {
         ChessPieceType type = ChessPieceType.fromSymbol(symbol);
-        if (type == null || tray == null || index < 0 || index >= 32) return;
+        if (type == null || tray == null || index < 0 || index >= 16) return;
         world.setBlockState(tray.add(index % 8, 1, index / 8), type.block().getDefaultState(), 3);
     }
 
@@ -1596,7 +1608,7 @@ public final class ChessGameManager {
         if (capturedType == null) return;
         boolean capturedWhite = capturedType.isWhite();
         List<Character> pieces = capturedWhite ? state.whiteCapturedPieces : state.blackCapturedPieces;
-        if (pieces.size() >= 32) return;
+        if (pieces.size() >= 16) return;
         pieces.add(symbol);
         if (state.whiteCaptureOrigin == null || state.blackCaptureOrigin == null) autoConfigureCaptures(world, state);
         BlockPos ownerTray = capturedWhite ? state.whiteCaptureOrigin : state.blackCaptureOrigin;
