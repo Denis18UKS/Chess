@@ -1431,7 +1431,18 @@ public final class ChessGameManager {
         if (state.running || state.countdownActive || state.finishPending)
             throw new IllegalStateException("Режим партии нельзя менять во время подготовки, активной игры или завершения.");
         state.matchMode = mode;
-        ChessWorldConfig.get(world.getServer()).setMatchMode(mode);
+        ChessWorldConfig config = ChessWorldConfig.get(world.getServer());
+        config.setMatchMode(mode);
+        Map<UUID, String> selected = config.getSelectedTeams();
+        int limit = mode == MatchMode.TWO_TWO ? 2 : 1;
+        for (String side : new String[] {"white", "black"}) {
+            List<UUID> selectedPlayers = selected.entrySet().stream()
+                .filter(choice -> side.equals(choice.getValue()))
+                .map(Map.Entry::getKey)
+                .sorted(java.util.Comparator.comparing(UUID::toString)).toList();
+            int allowed = mode == MatchMode.ONE_VS_BOT && "black".equals(side) ? 0 : limit;
+            for (int i = allowed; i < selectedPlayers.size(); i++) config.clearSelectedTeam(selectedPlayers.get(i));
+        }
         String label = mode == MatchMode.ONE_ONE ? "1v1" : mode == MatchMode.TWO_TWO ? "2v2" : "vs_bot";
         broadcast(world, "Режим партии: " + label + ".");
         ChessNetwork.broadcastBoard(world);

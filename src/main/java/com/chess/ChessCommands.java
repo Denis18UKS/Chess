@@ -96,7 +96,6 @@ public final class ChessCommands {
                 var world = ctx.getSource().getWorld();
                 try {
                     ChessGameManager.setMatchMode(world, ChessGameManager.MatchMode.ONE_VS_BOT);
-                    ChessGameManager.resetBoard(world);
                     ChessGameManager.start(world);
                     ctx.getSource().sendFeedback(() -> Text.literal("Chess: начата партия 1_vs_bot."), false);
                     return 1;
