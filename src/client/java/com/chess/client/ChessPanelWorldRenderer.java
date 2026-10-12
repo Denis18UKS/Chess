@@ -185,24 +185,30 @@ public final class ChessPanelWorldRenderer {
             default -> 0.0;
         };
         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees((float) angle));
-        matrices.translate(0.0, 0.0, facing == Direction.NORTH || facing == Direction.WEST ? -0.505 : 0.505);
+        matrices.translate(0.0, 0.0, 0.505);
         matrices.scale((float) PIXEL_SCALE, (float) -PIXEL_SCALE, (float) PIXEL_SCALE);
         Matrix4f matrix = matrices.peek().getPositionMatrix();
 
-        drawCentered(textRenderer, buffers, matrix, "ШАХМАТЫ", 13, 0xFFFFFF);
-        drawCentered(textRenderer, buffers, matrix, "РЕЖИМ ПАРТИИ", 34, 0xD6D6D6);
+        drawCentered(textRenderer, buffers, matrix, "ШАХМАТЫ", 13, 0xFF202020);
+        drawCentered(textRenderer, buffers, matrix, "РЕЖИМ ПАРТИИ", 34, 0xFF202020);
         String[] modes = {"1v1", "2v2", "vs_bot"};
-        int[] starts = {36, 88, 140};
+        int[] centers = {36, 96, 156};
         for (int i = 0; i < modes.length; i++) {
-            int color = i == modeIndex ? 0xFF80E080 : 0xFFFFFFFF;
-            drawCentered(textRenderer, buffers, matrix, (i == modeIndex ? "▶ " : "") + modes[i], starts[i] + 8, 51, color);
+            drawCentered(textRenderer, buffers, matrix, "█████████", centers[i], 46,
+                i == modeIndex ? 0xFF235A37 : 0xFF383838);
+            int color = i == modeIndex ? 0xFFFFFFFF : 0xFFE2E2E2;
+            drawCentered(textRenderer, buffers, matrix, (i == modeIndex ? "▶ " : "") + modes[i], centers[i], 51, color);
         }
-        drawCentered(textRenderer, buffers, matrix, "ВЫБОР СТОРОНЫ", 80, 0xFFD6D6D6);
+        drawCentered(textRenderer, buffers, matrix, "ВЫБОР СТОРОНЫ", 80, 0xFF202020);
+        drawCentered(textRenderer, buffers, matrix, "█████████████", 49, 90, 0xFF383838);
+        drawCentered(textRenderer, buffers, matrix, "█████████████", 139, 90, 0xFF383838);
         drawCentered(textRenderer, buffers, matrix, "[ БЕЛЫЕ ]", 49, 96, 0xFFFFFFFF);
-        drawCentered(textRenderer, buffers, matrix, "[ ЧЁРНЫЕ ]", 139, 96, 0xFFB0B0B0);
+        drawCentered(textRenderer, buffers, matrix, "[ ЧЁРНЫЕ ]", 139, 96, 0xFFE0E0E0);
+        drawCentered(textRenderer, buffers, matrix, "██████████████", 50, 139, 0xFF383838);
+        drawCentered(textRenderer, buffers, matrix, "██████████████", 142, 139, 0xFF235A37);
         drawCentered(textRenderer, buffers, matrix, "[ СНЯТЬ ВЫБОР ]", 50, 145, 0xFFE0E0E0);
-        drawCentered(textRenderer, buffers, matrix, "[ ▶ НАЧАТЬ ]", 142, 145, 0xFF80E080);
-        drawCentered(textRenderer, buffers, matrix, "3 • 2 • 1  →  ИГРА", 96, 174, 0xFFB9B9B9);
+        drawCentered(textRenderer, buffers, matrix, "[ ▶ НАЧАТЬ ]", 142, 145, 0xFFFFFFFF);
+        drawCentered(textRenderer, buffers, matrix, "3 • 2 • 1  →  ИГРА", 96, 174, 0xFF202020);
         matrices.pop();
     }
 
