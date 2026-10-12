@@ -1,11 +1,12 @@
 {
-	"required": true,
-	"package": "com.chess.client.mixin",
-	"compatibilityLevel": "JAVA_17",
-	"client": [
-		"ChessClientMixin"
-	],
-	"injectors": {
-		"defaultRequire": 1
-	}
+  "required": true,
+  "package": "com.chess.client.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "client": [
+    "HideSurvivalHudMixin",
+    "HideFoodIconsMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
 }

@@ -7,20 +7,20 @@ import org.slf4j.LoggerFactory;
 import software.bernie.geckolib.GeckoLib;
 
 public class ChessMod implements ModInitializer {
-
     public static final String MOD_ID = "chess";
-
-    public static final Logger LOGGER =
-            LoggerFactory.getLogger(MOD_ID);
+    public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     @Override
     public void onInitialize() {
         GeckoLib.initialize();
-
         ModBlocks.initialize();
         ModBlockEntities.initialize();
-
-        LOGGER.info("Chess mod initialized!");
+        ModItems.initialize();
+        ChessNetwork.registerServer();
+        ChessCommands.register();
+        ChessGameManager.registerTicker();
+        ChessInteractionHooks.register();
+        LOGGER.info("Chess initialized: 12 piece blocks, game state, commands and networking registered.");
     }
 
     public static Identifier id(String name) {

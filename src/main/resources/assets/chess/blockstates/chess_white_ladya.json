@@ -1,5 +1,7 @@
 {
-    "variants": {
-        "": {}
+  "variants": {
+    "": {
+      "model": "chess:block/chess_white_ladya"
     }
+  }
 }

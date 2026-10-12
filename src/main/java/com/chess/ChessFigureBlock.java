@@ -5,136 +5,99 @@ import net.minecraft.block.BlockState;
 import net.minecraft.block.BlockWithEntity;
 import net.minecraft.block.ShapeContext;
 import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.DyeItem;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.util.ActionResult;
+import net.minecraft.util.Hand;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.shape.VoxelShape;
-import net.minecraft.util.shape.VoxelShapes;
 import net.minecraft.world.BlockView;
+import net.minecraft.world.World;
 
 public class ChessFigureBlock extends BlockWithEntity {
+    // Figure blocks are located one block above a 2px-high board tile.
+    // Renderer moves only the visual model down to the tile surface; the
+    // invisible block entity itself keeps the board's logical coordinates.
+    private static final VoxelShape OUTLINE = createCuboidShape(3, -14, 3, 13, 6, 13);
+    private static final VoxelShape RAYCAST_HITBOX = createCuboidShape(1, -14, 1, 15, 16, 15);
 
-    // ============================================================
-    // ФОРМА ЛАДЬИ
-    // ============================================================
-
-    private static final VoxelShape LADYA_SHAPE = VoxelShapes.union(
-            // Нижняя платформа: 6 x 2 x 6
-            VoxelShapes.cuboid(
-                    5.0 / 16.0, 0.0 / 16.0, 5.0 / 16.0,
-                    11.0 / 16.0, 2.0 / 16.0, 11.0 / 16.0
-            ),
-
-            // Центральный корпус: 4 x 6 x 4
-            VoxelShapes.cuboid(
-                    6.0 / 16.0, 2.0 / 16.0, 6.0 / 16.0,
-                    10.0 / 16.0, 8.0 / 16.0, 10.0 / 16.0
-            ),
-
-            // Верхняя площадка: 6 x 1 x 6
-            VoxelShapes.cuboid(
-                    5.0 / 16.0, 8.0 / 16.0, 5.0 / 16.0,
-                    11.0 / 16.0, 9.0 / 16.0, 11.0 / 16.0
-            ),
-
-            // Левая стенка сверху
-            VoxelShapes.cuboid(
-                    5.0 / 16.0, 9.0 / 16.0, 5.0 / 16.0,
-                    6.0 / 16.0, 11.0 / 16.0, 11.0 / 16.0
-            ),
-
-            // Правая стенка сверху
-            VoxelShapes.cuboid(
-                    10.0 / 16.0, 9.0 / 16.0, 5.0 / 16.0,
-                    11.0 / 16.0, 11.0 / 16.0, 11.0 / 16.0
-            ),
-
-            // Передняя стенка сверху
-            VoxelShapes.cuboid(
-                    6.0 / 16.0, 9.0 / 16.0, 5.0 / 16.0,
-                    10.0 / 16.0, 11.0 / 16.0, 6.0 / 16.0
-            ),
-
-            // Задняя стенка сверху
-            VoxelShapes.cuboid(
-                    6.0 / 16.0, 9.0 / 16.0, 10.0 / 16.0,
-                    10.0 / 16.0, 11.0 / 16.0, 11.0 / 16.0
-            )
-    );
-
-    // ============================================================
-    // ФОРМА ПЕШКИ
-    // ============================================================
-
-    private static final VoxelShape PESHKA_SHAPE = VoxelShapes.union(
-            // Нижняя платформа: 6 x 2 x 6
-            VoxelShapes.cuboid(
-                    5.0 / 16.0, 0.0 / 16.0, 5.0 / 16.0,
-                    11.0 / 16.0, 2.0 / 16.0, 11.0 / 16.0
-            ),
-
-            // Центральная часть: 4 x 4 x 4
-            VoxelShapes.cuboid(
-                    6.0 / 16.0, 2.0 / 16.0, 6.0 / 16.0,
-                    10.0 / 16.0, 6.0 / 16.0, 10.0 / 16.0
-            ),
-
-            // Верхняя платформа: 6 x 2 x 6
-            VoxelShapes.cuboid(
-                    5.0 / 16.0, 6.0 / 16.0, 5.0 / 16.0,
-                    11.0 / 16.0, 8.0 / 16.0, 11.0 / 16.0
-            ),
-
-            // Верхушка: 4 x 2 x 4
-            VoxelShapes.cuboid(
-                    6.0 / 16.0, 8.0 / 16.0, 6.0 / 16.0,
-                    10.0 / 16.0, 10.0 / 16.0, 10.0 / 16.0
-            )
-    );
-
-    public ChessFigureBlock(Settings settings) {
-        super(settings);
-    }
+    public ChessFigureBlock(Settings settings) { super(settings.nonOpaque()); }
 
     @Override
-    public BlockEntity createBlockEntity(
-            BlockPos pos,
-            BlockState state
-    ) {
+    public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
         return new ChessFigureBlockEntity(pos, state);
     }
 
-    // Фигуру полностью рисует GeckoLib.
     @Override
     public BlockRenderType getRenderType(BlockState state) {
         return BlockRenderType.ENTITYBLOCK_ANIMATED;
     }
 
-    // Форма подсветки блока при наведении.
     @Override
-    public VoxelShape getOutlineShape(
-            BlockState state,
-            BlockView world,
-            BlockPos pos,
-            ShapeContext context
-    ) {
-        return getFigureShape(state);
-    }
-
-    // Физическая collision-форма.
-    @Override
-    public VoxelShape getCollisionShape(
-            BlockState state,
-            BlockView world,
-            BlockPos pos,
-            ShapeContext context
-    ) {
-        return getFigureShape(state);
-    }
-
-    private VoxelShape getFigureShape(BlockState state) {
-        if (state.isOf(ModBlocks.CHESS_WHITE_PESHKA)) {
-            return PESHKA_SHAPE;
+    public void onPlaced(World world, BlockPos pos, BlockState state, LivingEntity placer, ItemStack stack) {
+        super.onPlaced(world, pos, state, placer, stack);
+        if (!world.isClient && placer != null && world.getBlockEntity(pos) instanceof ChessFigureBlockEntity figure) {
+            float yaw = MathHelper.floor((placer.getYaw() * 4.0f / 360.0f) + 0.5f) * 90.0f + 180.0f;
+            figure.setYawDegrees(yaw);
         }
+    }
 
-        return LADYA_SHAPE;
+    @Override
+    public VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+        return OUTLINE;
+    }
+
+    @Override
+    public VoxelShape getRaycastShape(BlockState state, BlockView world, BlockPos pos) {
+        // Use a generous ray-only volume over the whole rendered model. The visible
+        // outline remains tight, and the collision shape remains empty.
+        return RAYCAST_HITBOX;
+    }
+
+    @Override
+    public VoxelShape getCollisionShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+        // Make the full visible figure physically solid. The volume intentionally extends
+        // below/above the logical block position to align with the model rendered on the tile.
+        return RAYCAST_HITBOX;
+    }
+
+    private static int dyeRgb(net.minecraft.util.DyeColor color) {
+        switch (color.getId()) {
+            case 0: return 0xF9FFFE; // white
+            case 1: return 0xF9801D; // orange
+            case 2: return 0xC74EBD; // magenta
+            case 3: return 0x3AB3DA; // light blue
+            case 4: return 0xFED83D; // yellow
+            case 5: return 0x80C71F; // lime
+            case 6: return 0xF38BAA; // pink
+            case 7: return 0x474F52; // gray
+            case 8: return 0x9D9D97; // light gray
+            case 9: return 0x169C9C; // cyan
+            case 10: return 0x8932B8; // purple
+            case 11: return 0x3C44AA; // blue
+            case 12: return 0x835432; // brown
+            case 13: return 0x5E7C16; // green
+            case 14: return 0xB02E26; // red
+            case 15: return 0x1D1D21; // black
+            default: return 0xFFFFFF;
+        }
+    }
+
+    @Override
+    public ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player,
+                              Hand hand, BlockHitResult hit) {
+        ItemStack held = player.getStackInHand(hand);
+        if (!(held.getItem() instanceof DyeItem dye)) return ActionResult.PASS;
+        if (!world.isClient && world.getBlockEntity(pos) instanceof ChessFigureBlockEntity figure) {
+            figure.setTintRgb(dyeRgb(dye.getColor()));
+            if (!player.getAbilities().creativeMode) held.decrement(1);
+            player.sendMessage(Text.literal("Цвет фигуры изменён. Используй другой краситель, чтобы сменить цвет."), true);
+        }
+        return ActionResult.success(world.isClient);
     }
 }
