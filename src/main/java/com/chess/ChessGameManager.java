@@ -487,11 +487,9 @@ public final class ChessGameManager {
                     tell(player, "Неизвестное действие конфигуратора: " + action);
             }
         } catch (IllegalStateException exception) {
-            if (exception.getMessage() != null && exception.getMessage().startsWith("Недостаточно игроков")) {
-                player.sendMessage(Text.literal(exception.getMessage()).formatted(Formatting.RED), false);
-            } else {
-                tell(player, exception.getMessage());
-            }
+            // Roster errors are displayed as a red title only, never repeated in chat.
+            if (exception.getMessage() != null && exception.getMessage().startsWith("Недостаточно игроков")) return;
+            tell(player, exception.getMessage());
         }
     }
 
@@ -524,11 +522,9 @@ public final class ChessGameManager {
             return false;
         }
         config.setSelectedTeam(player.getUuid(), teamName);
-        Formatting color = teamName.equals("white") ? Formatting.WHITE : Formatting.DARK_GRAY;
-        player.sendMessage(Text.literal("Предварительно выбрана сторона: "
-            + (teamName.equals("white") ? "Белые" : "Чёрные")
-            + ". До начала партии ты не состоишь в Minecraft-команде."
-            + (mode == MatchMode.ONE_VS_BOT ? " Бот автоматически займёт противоположную сторону." : "")).formatted(color), false);
+        player.sendMessage(Text.literal("Выбрана команда: "
+            + (teamName.equals("white") ? "Белые" : "Чёрные"))
+            .formatted(Formatting.GOLD), false);
         return true;
     }
 
@@ -616,7 +612,6 @@ public final class ChessGameManager {
                 state.observers.clear();
                 state.observerOriginalModes.clear();
                 showServerTitle(server, "Недостаточно игроков", Formatting.RED);
-                broadcast(world, "Недостаточно игроков. Запуск партии отменён.");
                 continue;
             }
             if (state.countdownRemaining > 0) {

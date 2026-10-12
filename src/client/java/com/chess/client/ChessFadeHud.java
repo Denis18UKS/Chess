@@ -2,9 +2,12 @@ package com.chess.client;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.ChatScreen;
 
-/** Server-timed full-screen fade drawn after the HUD and again above the chat screen. */
+/**
+ * Client-side fade transition. The global mixin calls renderOverlay after all GUI and HUD
+ * elements have been drawn, so the fade is still visible when F1 hides the HUD and when
+ * the chat or another screen is open.
+ */
 public final class ChessFadeHud {
     private static long startedNanos;
     private static long fadeOutNanos;
@@ -14,8 +17,7 @@ public final class ChessFadeHud {
 
     private ChessFadeHud() {}
 
-    // Kept as a no-op for the existing client initializer; rendering is injected at render TAIL
-    // so F1 and the chat screen cannot suppress or cover the transition.
+    // Preserve the existing initializer API; the GlobalFadeOverlayMixin owns rendering.
     public static void register() {}
 
     public static void start(int fadeOutTicks, int holdTicks, int fadeInTicks) {
@@ -26,14 +28,6 @@ public final class ChessFadeHud {
         active = true;
     }
 
-    /** Called at the very end of HUD rendering. The regular HUD may be hidden by F1, but this hook still runs. */
-    public static void renderHudOverlay(DrawContext context) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client != null && client.currentScreen instanceof ChatScreen) return;
-        renderOverlay(context);
-    }
-
-    /** Draw above chat when chat is open, instead of letting chat panels cut through the fade. */
     public static void renderOverlay(DrawContext context) {
         if (!active) return;
         MinecraftClient client = MinecraftClient.getInstance();
@@ -53,7 +47,7 @@ public final class ChessFadeHud {
         if (elapsed < fadeEnd) alpha = elapsed / (double) fadeOutNanos;
         else if (elapsed < holdEnd) alpha = 1.0;
         else alpha = 1.0 - (elapsed - holdEnd) / (double) fadeInNanos;
-        int opacity = (int) Math.max(0, Math.min(255, Math.round(alpha * 255.0)));
+        int opacity = (int)Math.max(0, Math.min(255, Math.round(alpha * 255.0)));
         if (opacity <= 0) return;
         context.fill(0, 0, client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight(),
             (opacity << 24));

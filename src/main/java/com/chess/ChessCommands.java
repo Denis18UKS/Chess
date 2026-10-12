@@ -52,6 +52,7 @@ public final class ChessCommands {
                     ctx.getSource().sendFeedback(() -> Text.literal("Chess: начальная расстановка восстановлена."), false);
                     return 1;
                 } catch (IllegalStateException ex) {
+                    if (ex.getMessage() != null && ex.getMessage().startsWith("Недостаточно игроков")) return 0;
                     ctx.getSource().sendError(Text.literal(ex.getMessage()));
                     return 0;
                 }
@@ -62,6 +63,7 @@ public final class ChessCommands {
                     ctx.getSource().sendFeedback(() -> Text.literal("Chess: start"), false);
                     return 1;
                 } catch (IllegalStateException ex) {
+                    if (ex.getMessage() != null && ex.getMessage().startsWith("Недостаточно игроков")) return 0;
                     ctx.getSource().sendError(Text.literal(ex.getMessage()));
                     return 0;
                 }
@@ -101,6 +103,7 @@ public final class ChessCommands {
                     ctx.getSource().sendFeedback(() -> Text.literal("Chess: начата партия 1_vs_bot."), false);
                     return 1;
                 } catch (IllegalStateException ex) {
+                    if (ex.getMessage() != null && ex.getMessage().startsWith("Недостаточно игроков")) return 0;
                     ctx.getSource().sendError(Text.literal(ex.getMessage()));
                     return 0;
                 }
