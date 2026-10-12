@@ -50,6 +50,11 @@ public class ChessModClient implements ClientModInitializer {
 
         UseBlockCallback.EVENT.register((player, world, hand, hit) -> {
             var stack = player.getStackInHand(hand);
+            if (world.isClient && stack.isOf(ModItems.CHESS_TELEPORT_TOOL)) {
+                MinecraftClient client = MinecraftClient.getInstance();
+                client.setScreen(new ChessTeleportConfiguratorScreen(client.currentScreen, hit.getBlockPos()));
+                return ActionResult.SUCCESS;
+            }
             if (world.isClient && stack.isOf(ModItems.CHESS_FADE_TOOL)) {
                 MinecraftClient client = MinecraftClient.getInstance();
                 client.setScreen(new ChessFadeConfiguratorScreen(client.currentScreen, hit.getBlockPos()));
@@ -111,6 +116,11 @@ public class ChessModClient implements ClientModInitializer {
 
         UseItemCallback.EVENT.register((player, world, hand) -> {
             var initialStack = player.getStackInHand(hand);
+            if (initialStack.isOf(ModItems.CHESS_TELEPORT_TOOL)) {
+                if (world.isClient) MinecraftClient.getInstance().setScreen(
+                    new ChessTeleportConfiguratorScreen(MinecraftClient.getInstance().currentScreen, player.getBlockPos()));
+                return TypedActionResult.success(initialStack);
+            }
             if (initialStack.isOf(ModItems.CHESS_FADE_TOOL)) {
                 if (world.isClient) MinecraftClient.getInstance().setScreen(
                     new ChessFadeConfiguratorScreen(MinecraftClient.getInstance().currentScreen, player.getBlockPos()));

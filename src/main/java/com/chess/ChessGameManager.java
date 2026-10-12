@@ -551,13 +551,15 @@ public final class ChessGameManager {
         if (target != null) {
             ServerWorld destination = resolveWorld(player.getServer(), target.dimension);
             if (destination != null) {
-                player.teleport(destination, target.pos.getX() + 0.5, target.pos.getY() + 1.0,
-                    target.pos.getZ() + 0.5, target.yaw, target.pitch);
+                BlockPos feet = findSafeFeetPosition(destination, target.pos, new HashSet<>(), Set.of(player.getUuid()));
+                player.teleport(destination, feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5,
+                    target.yaw, target.pitch);
                 return;
             }
         }
-        player.teleport(boardWorld, state.origin.getX() + 4.5, state.origin.getY() + 5.0,
-            state.origin.getZ() - 3.5, 0.0f, 25.0f);
+        BlockPos fallback = state.origin.add(4, 4, -3);
+        BlockPos feet = findSafeFeetPosition(boardWorld, fallback, new HashSet<>(), Set.of(player.getUuid()));
+        player.teleport(boardWorld, feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5, 0.0f, 25.0f);
     }
 
     private static void processStartCountdowns(MinecraftServer server, long tick) {
