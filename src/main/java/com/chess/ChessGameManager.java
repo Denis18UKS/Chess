@@ -96,8 +96,8 @@ public final class ChessGameManager {
             return state;
         });
         if (world instanceof ServerWorld serverWorld && state.configured && !state.legacyCaptureTraysCleaned) {
-            clearLegacySideCaptureTrays(serverWorld, state);
-            state.legacyCaptureTraysCleaned = true;
+            // On load, migrate old side trays and immediately ensure the two new end trays exist.
+            autoConfigureCaptures(serverWorld, state);
         }
         return state;
     }
@@ -109,8 +109,9 @@ public final class ChessGameManager {
         state.legacyCaptureTraysCleaned = false;
         state.pending = null;
         ChessWorldConfig.get(world.getServer()).saveBoardBinding(world, firstSquare);
-        clearLegacySideCaptureTrays(world, state);
-        state.legacyCaptureTraysCleaned = true;
+        // Binding/rebuilding a board should produce the two 8x2 end trays immediately,
+        // not leave the world with only the main board until the first match starts.
+        autoConfigureCaptures(world, state);
         world.getPlayers().forEach(p -> p.sendMessage(Text.literal(
             "Шахматное поле привязано: " + firstSquare.getX() + " " + firstSquare.getY() + " " + firstSquare.getZ()
         ), false));
