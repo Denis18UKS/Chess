@@ -67,7 +67,7 @@ public final class ChessGameManager {
     }
 
     public static BoardState board(World world) {
-        BoardState state = BOARDS.computeIfAbsent(world.getRegistryKey(), key -> {
+        BoardState result = BOARDS.computeIfAbsent(world.getRegistryKey(), key -> {
             BoardState state = new BoardState();
             if (world instanceof ServerWorld serverWorld) {
                 ChessWorldConfig config = ChessWorldConfig.get(serverWorld.getServer());
@@ -95,11 +95,11 @@ public final class ChessGameManager {
             }
             return state;
         });
-        if (world instanceof ServerWorld serverWorld && state.configured && !state.legacyCaptureTraysCleaned) {
+        if (world instanceof ServerWorld serverWorld && result.configured && !result.legacyCaptureTraysCleaned) {
             // On load, migrate old side trays and immediately ensure the two new end trays exist.
-            autoConfigureCaptures(serverWorld, state);
+            autoConfigureCaptures(serverWorld, result);
         }
-        return state;
+        return result;
     }
 
     public static void configureBoard(ServerWorld world, BlockPos firstSquare) {
