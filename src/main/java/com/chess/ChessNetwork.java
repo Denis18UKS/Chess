@@ -4,6 +4,7 @@ import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.PacketByteBuf;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Identifier;
@@ -25,12 +26,19 @@ public final class ChessNetwork {
     public static final Identifier CLOCK_STATE = ChessMod.id("clock_state");
     public static final Identifier ADMIN_ACTION = ChessMod.id("admin_action");
     public static final Identifier ADMIN_STATE = ChessMod.id("admin_state");
+    public static final Identifier SPECTATE_TOGGLE = ChessMod.id("spectate_toggle");
+    public static final Identifier SPECTATOR_STATE = ChessMod.id("spectator_state");
+    public static final Identifier FADE_TRANSITION = ChessMod.id("fade_transition");
+    public static final Identifier FADE_SETTINGS_STATE = ChessMod.id("fade_settings_state");
+    public static final Identifier PANEL_MODE_STATE = ChessMod.id("panel_mode_state");
 
     private ChessNetwork() {}
 
     public static void registerServer() {
         ServerPlayNetworking.registerGlobalReceiver(REQUEST_BOARD, (server, player, handler, buf, responseSender) ->
             server.execute(() -> sendBoard(player)));
+        ServerPlayNetworking.registerGlobalReceiver(SPECTATE_TOGGLE, (server, player, handler, buf, responseSender) ->
+            server.execute(() -> ChessGameManager.toggleSpectating(player)));
         ServerPlayNetworking.registerGlobalReceiver(ADMIN_ACTION, (server, player, handler, buf, responseSender) -> {
             String action = buf.readString(64);
             BlockPos pos = buf.readBlockPos();
@@ -83,6 +91,49 @@ public final class ChessNetwork {
         buf.writeInt(state.matchDurationMinutes);
         buf.writeInt(rule);
         ServerPlayNetworking.send(player, ADMIN_STATE, buf);
+    }
+
+    public static void sendSpectatorState(ServerPlayerEntity player, boolean watching, boolean whiteTurn) {
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeBoolean(watching);
+        buf.writeBoolean(whiteTurn);
+        ServerPlayNetworking.send(player, SPECTATOR_STATE, buf);
+    }
+
+    public static void broadcastSpectatorState(ServerWorld world, ChessGameManager.BoardState state) {
+        for (java.util.UUID uuid : new java.util.HashSet<>(state.observers)) {
+            ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(uuid);
+            if (player != null) sendSpectatorState(player, state.running, state.whiteTurn);
+        }
+    }
+
+    public static void sendPanelMode(ServerPlayerEntity player, ChessGameManager.MatchMode mode, boolean threeDimensional) {
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeInt(mode == ChessGameManager.MatchMode.ONE_ONE ? 0
+            : mode == ChessGameManager.MatchMode.TWO_TWO ? 1 : 2);
+        buf.writeBoolean(threeDimensional);
+        ServerPlayNetworking.send(player, PANEL_MODE_STATE, buf);
+    }
+
+    public static void broadcastPanelMode(MinecraftServer server, ChessGameManager.MatchMode mode) {
+        boolean threeDimensional = ChessWorldConfig.get(server).isThreeDimensional();
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList())
+            sendPanelMode(player, mode, threeDimensional);
+    }
+
+    public static void sendFadeSettings(ServerPlayerEntity player, ChessWorldConfig config) {
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeInt(config.getFadeDurationTicks());
+        buf.writeInt(config.getTeleportDelayTicks());
+        ServerPlayNetworking.send(player, FADE_SETTINGS_STATE, buf);
+    }
+
+    public static void sendFadeTransition(ServerPlayerEntity player, int fadeOutTicks, int holdTicks, int fadeInTicks) {
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeInt(fadeOutTicks);
+        buf.writeInt(holdTicks);
+        buf.writeInt(fadeInTicks);
+        ServerPlayNetworking.send(player, FADE_TRANSITION, buf);
     }
 
     public static void sendBoard(ServerPlayerEntity player) {

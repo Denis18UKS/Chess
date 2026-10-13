@@ -8,6 +8,7 @@ import com.chess.ModItems;
 import com.chess.client.renderer.ChessFigureRenderer;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
@@ -30,6 +31,15 @@ public class ChessModClient implements ClientModInitializer {
         ChessClientNetwork.registerClient();
         ChessWorldHighlights.register();
         ChessClockHud.register();
+        ChessSpectatorHud.register();
+        ChessFadeHud.register();
+        ChessPanelWorldRenderer.register();
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> ChessPanelWorldRenderer.requestPanelState());
+        KeyBinding spectatorKey = KeyBindingHelper.registerKeyBinding(
+            new KeyBinding("key.chess.spectate", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_O, "category.chess"));
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            while (spectatorKey.wasPressed()) ChessClientNetwork.toggleSpectating();
+        });
         KeyBinding switchTeamKey = KeyBindingHelper.registerKeyBinding(
             new KeyBinding("key.chess.switch_team", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_G, "category.chess"));
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -40,15 +50,34 @@ public class ChessModClient implements ClientModInitializer {
 
         UseBlockCallback.EVENT.register((player, world, hand, hit) -> {
             var stack = player.getStackInHand(hand);
+            if (world.isClient && stack.isOf(ModItems.CHESS_TELEPORT_TOOL)) {
+                MinecraftClient client = MinecraftClient.getInstance();
+                client.setScreen(new ChessTeleportConfiguratorScreen(client.currentScreen, hit.getBlockPos()));
+                return ActionResult.SUCCESS;
+            }
+            if (world.isClient && stack.isOf(ModItems.CHESS_FADE_TOOL)) {
+                MinecraftClient client = MinecraftClient.getInstance();
+                client.setScreen(new ChessFadeConfiguratorScreen(client.currentScreen, hit.getBlockPos()));
+                return ActionResult.SUCCESS;
+            }
             if (world.isClient && stack.isOf(ModItems.CHESS_CONFIG_TOOL)) {
                 MinecraftClient client = MinecraftClient.getInstance();
                 client.setScreen(new ChessConfiguratorScreen(client.currentScreen, hit.getBlockPos()));
                 return ActionResult.SUCCESS;
             }
-            if (world.isClient && world.getBlockState(hit.getBlockPos()).isOf(ModBlocks.CHESS_SETTINGS_PANEL)) {
+            if (world.isClient && stack.isOf(ModItems.CHESS_ZONE_TOOL)) {
                 MinecraftClient client = MinecraftClient.getInstance();
-                client.setScreen(new ChessSettingsScreen(client.currentScreen, hit.getBlockPos()));
+                client.setScreen(new ChessTriggerZoneConfiguratorScreen(client.currentScreen, hit.getBlockPos()));
                 return ActionResult.SUCCESS;
+            }
+            if (world.isClient && stack.isOf(ModItems.CHESS_LOBBY_TOOL)) {
+                MinecraftClient client = MinecraftClient.getInstance();
+                client.setScreen(new ChessLobbyConfiguratorScreen(client.currentScreen, hit.getBlockPos()));
+                return ActionResult.SUCCESS;
+            }
+            if (world.isClient && world.getBlockState(hit.getBlockPos()).isOf(ModBlocks.CHESS_SETTINGS_PANEL)) {
+                return ChessPanelWorldRenderer.handleClick(world, hit)
+                    ? ActionResult.SUCCESS : ActionResult.PASS;
             }
             // Let the figure block's own onUse handler apply the dye in both 2D and 3D worlds.
             if (stack.getItem() instanceof net.minecraft.item.DyeItem) return ActionResult.PASS;
@@ -96,6 +125,32 @@ public class ChessModClient implements ClientModInitializer {
         });
 
         UseItemCallback.EVENT.register((player, world, hand) -> {
+            var initialStack = player.getStackInHand(hand);
+            if (initialStack.isOf(ModItems.CHESS_TELEPORT_TOOL)) {
+                if (world.isClient) MinecraftClient.getInstance().setScreen(
+                    new ChessTeleportConfiguratorScreen(MinecraftClient.getInstance().currentScreen, player.getBlockPos()));
+                return TypedActionResult.success(initialStack);
+            }
+            if (initialStack.isOf(ModItems.CHESS_FADE_TOOL)) {
+                if (world.isClient) MinecraftClient.getInstance().setScreen(
+                    new ChessFadeConfiguratorScreen(MinecraftClient.getInstance().currentScreen, player.getBlockPos()));
+                return TypedActionResult.success(initialStack);
+            }
+            if (initialStack.isOf(ModItems.CHESS_CONFIG_TOOL)) {
+                if (world.isClient) MinecraftClient.getInstance().setScreen(
+                    new ChessConfiguratorScreen(MinecraftClient.getInstance().currentScreen, player.getBlockPos()));
+                return TypedActionResult.success(initialStack);
+            }
+            if (initialStack.isOf(ModItems.CHESS_ZONE_TOOL)) {
+                if (world.isClient) MinecraftClient.getInstance().setScreen(
+                    new ChessTriggerZoneConfiguratorScreen(MinecraftClient.getInstance().currentScreen, player.getBlockPos()));
+                return TypedActionResult.success(initialStack);
+            }
+            if (initialStack.isOf(ModItems.CHESS_LOBBY_TOOL)) {
+                if (world.isClient) MinecraftClient.getInstance().setScreen(
+                    new ChessLobbyConfiguratorScreen(MinecraftClient.getInstance().currentScreen, player.getBlockPos()));
+                return TypedActionResult.success(initialStack);
+            }
             var stack = player.getStackInHand(hand);
             if (!player.isSneaking() && ModBlocks.isFigureItem(stack)) {
                 if (world.isClient && ChessClientNetwork.threeDimensional) return TypedActionResult.pass(stack);
@@ -127,9 +182,10 @@ public class ChessModClient implements ClientModInitializer {
                 if (ChessBoardScreen.cellAt(row, col) == '.') continue;
                 BlockPos piecePos = origin.add(col, 1, row);
                 if (com.chess.ChessPieceType.fromBlock(world.getBlockState(piecePos)) == null) continue;
-                // This AABB follows the model from the 2px board surface to its crown/top.
-                Box modelBounds = new Box(piecePos.getX() + 0.06, piecePos.getY() - 0.875, piecePos.getZ() + 0.06,
-                    piecePos.getX() + 0.94, piecePos.getY() + 0.95, piecePos.getZ() + 0.94);
+                // Models are about 6px wide and at most 16px tall, offset 14/16 block below
+                // the logical block. Never raycast the old oversized cube above the piece.
+                Box modelBounds = new Box(piecePos.getX() + 0.25, piecePos.getY() - 0.875, piecePos.getZ() + 0.25,
+                    piecePos.getX() + 0.75, piecePos.getY() + 0.125, piecePos.getZ() + 0.75);
                 var intercept = modelBounds.raycast(start, end);
                 if (intercept.isEmpty()) continue;
                 double distance = intercept.get().squaredDistanceTo(start);

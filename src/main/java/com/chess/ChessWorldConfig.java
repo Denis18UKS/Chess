@@ -24,10 +24,25 @@ public final class ChessWorldConfig extends PersistentState {
     private final Map<String, String> blockCommands = new HashMap<>();
     private final Map<String, TriggerZone> zones = new HashMap<>();
     private final Set<UUID> seenPlayers = new HashSet<>();
+    // Pre-match side selections are not Minecraft scoreboard teams. Those are only
+    // assigned after a validated countdown finishes and a match actually starts.
+    private final Map<UUID, String> selectedTeams = new HashMap<>();
     private String zoneCornerDimension = "";
     private BlockPos zoneCorner = BlockPos.ORIGIN;
+    private String zoneCornerName = "";
+    private String boardDimension = "";
+    private BlockPos boardOrigin = BlockPos.ORIGIN;
+    private boolean boardBound;
+    private boolean threeDimensional;
+    private int fadeDurationTicks = 10;
+    private int teleportDelayTicks = 14;
     private int lobbyDelaySeconds = 20;
     private int matchDurationMinutes = 0;
+    // 0=off, 1=temporary (turn change only), 2=permanent while the match is active.
+    private int turnHudMode = 2;
+    private boolean triggerZonesVisible;
+    private BotDifficulty botDifficulty = BotDifficulty.MEDIUM;
+    private BotStyle botStyle = BotStyle.BALANCED;
     private ChessGameManager.MatchMode matchMode = ChessGameManager.MatchMode.ONE_ONE;
     private ChessGameManager.RuleMode ruleMode = ChessGameManager.RuleMode.REALISM;
 
@@ -38,9 +53,48 @@ public final class ChessWorldConfig extends PersistentState {
 
     public SavedPos getLocation(String name) { return locations.get(name); }
 
-    public void setLocation(String name, ServerWorld world, BlockPos pos) {
-        locations.put(name, new SavedPos(world.getRegistryKey().getValue().toString(), pos.toImmutable()));
+    public boolean hasBoardBinding() { return boardBound && !boardDimension.isBlank(); }
+    public String getBoardDimension() { return boardDimension; }
+    public BlockPos getBoardOrigin() { return boardOrigin.toImmutable(); }
+    public void saveBoardBinding(ServerWorld world, BlockPos origin) {
+        boardDimension = world.getRegistryKey().getValue().toString();
+        boardOrigin = origin.toImmutable();
+        boardBound = true;
         markDirty();
+    }
+
+    public boolean isThreeDimensional() { return threeDimensional; }
+    public void setThreeDimensional(boolean value) {
+        threeDimensional = value;
+        markDirty();
+    }
+
+    public void setLocation(String name, ServerWorld world, BlockPos pos) {
+        setLocation(name, world, pos, 0.0f, 0.0f);
+    }
+
+    public void setLocation(String name, ServerWorld world, BlockPos pos, float yaw, float pitch) {
+        locations.put(name, new SavedPos(world.getRegistryKey().getValue().toString(), pos.toImmutable(), yaw, pitch));
+        markDirty();
+    }
+
+    public int getFadeDurationTicks() { return fadeDurationTicks; }
+
+    public void setFadeDurationTicks(int ticks) {
+        fadeDurationTicks = Math.max(2, Math.min(100, ticks));
+        markDirty();
+    }
+
+    public int getTeleportDelayTicks() { return teleportDelayTicks; }
+
+    public void setTeleportDelayTicks(int ticks) {
+        teleportDelayTicks = Math.max(0, Math.min(200, ticks));
+        markDirty();
+    }
+
+    /** A transition may not teleport before the screen has fully faded to black. */
+    public int getEffectiveTeleportDelayTicks() {
+        return Math.max(fadeDurationTicks, teleportDelayTicks);
     }
 
     public int getLobbyDelaySeconds() { return lobbyDelaySeconds; }
@@ -64,6 +118,30 @@ public final class ChessWorldConfig extends PersistentState {
         markDirty();
     }
 
+    public int getTurnHudMode() { return turnHudMode; }
+    public void setTurnHudMode(int mode) {
+        turnHudMode = Math.max(0, Math.min(2, mode));
+        markDirty();
+    }
+
+    public boolean areTriggerZonesVisible() { return triggerZonesVisible; }
+    public void setTriggerZonesVisible(boolean visible) {
+        triggerZonesVisible = visible;
+        markDirty();
+    }
+
+    public BotDifficulty getBotDifficulty() { return botDifficulty; }
+    public void setBotDifficulty(BotDifficulty difficulty) {
+        botDifficulty = difficulty == null ? BotDifficulty.MEDIUM : difficulty;
+        markDirty();
+    }
+
+    public BotStyle getBotStyle() { return botStyle; }
+    public void setBotStyle(BotStyle style) {
+        botStyle = style == null ? BotStyle.BALANCED : style;
+        markDirty();
+    }
+
     public ChessGameManager.RuleMode getRuleMode() { return ruleMode; }
 
     public void setRuleMode(ChessGameManager.RuleMode mode) {
@@ -76,6 +154,31 @@ public final class ChessWorldConfig extends PersistentState {
     }
 
     public boolean hasSeenPlayer(UUID uuid) { return seenPlayers.contains(uuid); }
+
+    public String getSelectedTeam(UUID uuid) {
+        return selectedTeams.get(uuid);
+    }
+
+    public Map<UUID, String> getSelectedTeams() {
+        return new HashMap<>(selectedTeams);
+    }
+
+    public void setSelectedTeam(UUID uuid, String team) {
+        if (uuid == null || !("white".equals(team) || "black".equals(team))) return;
+        selectedTeams.put(uuid, team);
+        markDirty();
+    }
+
+    public void clearSelectedTeam(UUID uuid) {
+        if (selectedTeams.remove(uuid) != null) markDirty();
+    }
+
+    public void clearSelectedTeams() {
+        if (!selectedTeams.isEmpty()) {
+            selectedTeams.clear();
+            markDirty();
+        }
+    }
 
     public void bindBlock(ServerWorld world, BlockPos pos, String command) {
         String key = blockKey(world, pos);
@@ -95,8 +198,13 @@ public final class ChessWorldConfig extends PersistentState {
     }
 
     public void saveZoneCorner(ServerWorld world, BlockPos pos) {
+        saveZoneCorner(world, pos, "");
+    }
+
+    public void saveZoneCorner(ServerWorld world, BlockPos pos, String zoneName) {
         zoneCornerDimension = world.getRegistryKey().getValue().toString();
         zoneCorner = pos.toImmutable();
+        zoneCornerName = zoneName == null ? "" : zoneName.trim();
         markDirty();
     }
 
@@ -106,10 +214,13 @@ public final class ChessWorldConfig extends PersistentState {
         if (!hasZoneCorner()) throw new IllegalStateException("Сначала назначьте угол A зоны.");
         if (!zoneCornerDimension.equals(world.getRegistryKey().getValue().toString()))
             throw new IllegalStateException("Оба угла триггер-зоны должны быть в одном измерении.");
-        String id = name == null || name.isBlank() ? "zone_" + zones.size() : name.trim();
+        String requested = name == null ? "" : name.trim();
+        String id = !requested.isBlank() ? requested
+            : !zoneCornerName.isBlank() ? zoneCornerName : "zone_" + zones.size();
         zones.put(id, new TriggerZone(id, zoneCornerDimension, zoneCorner, otherCorner.toImmutable(),
             cleanCommand(enter), cleanCommand(leave)));
         zoneCornerDimension = "";
+        zoneCornerName = "";
         zoneCorner = BlockPos.ORIGIN;
         markDirty();
     }
@@ -129,6 +240,8 @@ public final class ChessWorldConfig extends PersistentState {
             item.putString("name", entry.getKey());
             item.putString("dimension", entry.getValue().dimension);
             item.putLong("pos", entry.getValue().pos.asLong());
+            item.putFloat("yaw", entry.getValue().yaw);
+            item.putFloat("pitch", entry.getValue().pitch);
             locationList.add(item);
         }
         nbt.put("locations", locationList);
@@ -158,10 +271,30 @@ public final class ChessWorldConfig extends PersistentState {
         NbtList playerList = new NbtList();
         for (UUID uuid : seenPlayers) playerList.add(NbtString.of(uuid.toString()));
         nbt.put("seenPlayers", playerList);
+
+        NbtList selectedTeamList = new NbtList();
+        for (Map.Entry<UUID, String> entry : selectedTeams.entrySet()) {
+            NbtCompound item = new NbtCompound();
+            item.putString("uuid", entry.getKey().toString());
+            item.putString("team", entry.getValue());
+            selectedTeamList.add(item);
+        }
+        nbt.put("selectedTeams", selectedTeamList);
         nbt.putString("zoneCornerDimension", zoneCornerDimension);
         nbt.putLong("zoneCorner", zoneCorner.asLong());
+        nbt.putString("zoneCornerName", zoneCornerName);
+        nbt.putString("boardDimension", boardDimension);
+        nbt.putLong("boardOrigin", boardOrigin.asLong());
+        nbt.putBoolean("boardBound", boardBound);
+        nbt.putBoolean("threeDimensional", threeDimensional);
+        nbt.putInt("fadeDurationTicks", fadeDurationTicks);
+        nbt.putInt("teleportDelayTicks", teleportDelayTicks);
         nbt.putInt("lobbyDelaySeconds", lobbyDelaySeconds);
         nbt.putInt("matchDurationMinutes", matchDurationMinutes);
+        nbt.putInt("turnHudMode", turnHudMode);
+        nbt.putBoolean("triggerZonesVisible", triggerZonesVisible);
+        nbt.putString("botDifficulty", botDifficulty.name());
+        nbt.putString("botStyle", botStyle.name());
         nbt.putString("matchMode", matchMode.name());
         nbt.putString("ruleMode", ruleMode.name());
         return nbt;
@@ -173,7 +306,8 @@ public final class ChessWorldConfig extends PersistentState {
         for (int i = 0; i < locationList.size(); i++) {
             NbtCompound item = locationList.getCompound(i);
             config.locations.put(item.getString("name"),
-                new SavedPos(item.getString("dimension"), BlockPos.fromLong(item.getLong("pos"))));
+                new SavedPos(item.getString("dimension"), BlockPos.fromLong(item.getLong("pos")),
+                    item.getFloat("yaw"), item.getFloat("pitch")));
         }
         NbtList bindingList = nbt.getList("bindings", NbtElement.COMPOUND_TYPE);
         for (int i = 0; i < bindingList.size(); i++) {
@@ -193,10 +327,32 @@ public final class ChessWorldConfig extends PersistentState {
             try { config.seenPlayers.add(UUID.fromString(playerList.getString(i))); }
             catch (IllegalArgumentException ignored) {}
         }
+        NbtList selectedTeamList = nbt.getList("selectedTeams", NbtElement.COMPOUND_TYPE);
+        for (int i = 0; i < selectedTeamList.size(); i++) {
+            NbtCompound item = selectedTeamList.getCompound(i);
+            try {
+                UUID uuid = UUID.fromString(item.getString("uuid"));
+                String team = item.getString("team");
+                if ("white".equals(team) || "black".equals(team)) config.selectedTeams.put(uuid, team);
+            } catch (IllegalArgumentException ignored) {}
+        }
         config.zoneCornerDimension = nbt.getString("zoneCornerDimension");
         config.zoneCorner = BlockPos.fromLong(nbt.getLong("zoneCorner"));
+        config.zoneCornerName = nbt.getString("zoneCornerName");
+        config.boardDimension = nbt.getString("boardDimension");
+        config.boardOrigin = BlockPos.fromLong(nbt.getLong("boardOrigin"));
+        config.boardBound = nbt.getBoolean("boardBound") && !config.boardDimension.isBlank();
+        config.threeDimensional = nbt.getBoolean("threeDimensional");
+        if (nbt.contains("fadeDurationTicks")) config.fadeDurationTicks = Math.max(2, Math.min(100, nbt.getInt("fadeDurationTicks")));
+        if (nbt.contains("teleportDelayTicks")) config.teleportDelayTicks = Math.max(0, Math.min(200, nbt.getInt("teleportDelayTicks")));
         if (nbt.contains("lobbyDelaySeconds")) config.lobbyDelaySeconds = Math.max(0, Math.min(3600, nbt.getInt("lobbyDelaySeconds")));
         if (nbt.contains("matchDurationMinutes")) config.matchDurationMinutes = Math.max(0, Math.min(1440, nbt.getInt("matchDurationMinutes")));
+        if (nbt.contains("turnHudMode")) config.turnHudMode = Math.max(0, Math.min(2, nbt.getInt("turnHudMode")));
+        if (nbt.contains("triggerZonesVisible")) config.triggerZonesVisible = nbt.getBoolean("triggerZonesVisible");
+        try { config.botDifficulty = BotDifficulty.valueOf(nbt.getString("botDifficulty")); }
+        catch (IllegalArgumentException ignored) {}
+        try { config.botStyle = BotStyle.valueOf(nbt.getString("botStyle")); }
+        catch (IllegalArgumentException ignored) {}
         try { config.matchMode = ChessGameManager.MatchMode.valueOf(nbt.getString("matchMode")); }
         catch (IllegalArgumentException ignored) {}
         try { config.ruleMode = ChessGameManager.RuleMode.valueOf(nbt.getString("ruleMode")); }
@@ -204,12 +360,27 @@ public final class ChessWorldConfig extends PersistentState {
         return config;
     }
 
+    public enum BotDifficulty {
+        EASY, MEDIUM, HIGH, PROFESSIONAL
+    }
+
+    public enum BotStyle {
+        BALANCED, AGGRESSIVE, DEFENSIVE, POSITIONAL
+    }
+
     public static final class SavedPos {
         public final String dimension;
         public final BlockPos pos;
+        public final float yaw;
+        public final float pitch;
         public SavedPos(String dimension, BlockPos pos) {
+            this(dimension, pos, 0.0f, 0.0f);
+        }
+        public SavedPos(String dimension, BlockPos pos, float yaw, float pitch) {
             this.dimension = dimension;
             this.pos = pos.toImmutable();
+            this.yaw = yaw;
+            this.pitch = pitch;
         }
     }
 

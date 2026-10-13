@@ -68,7 +68,7 @@ public class ChessBoardScreen extends Screen {
         threeDimensional = threeD;
         developerMode = devMode;
         promotionPending = promotion;
-        promotionChoices = choices == null || choices.isEmpty() ? "QRBN" : choices;
+        promotionChoices = choices == null ? "" : choices;
         whiteCaptures = whiteCaptured == null ? "" : whiteCaptured;
         blackCaptures = blackCaptured == null ? "" : blackCaptured;
         ChessWorldHighlights.updateBoardState(cells, whiteTurn, ruleMode, threeD, origin);
@@ -103,7 +103,7 @@ public class ChessBoardScreen extends Screen {
         String status = !configured ? "Поле не настроено" : !running ? "Партия остановлена" : paused ? "ПАУЗА" : (whiteTurn ? "ХОД БЕЛЫХ" : "ХОД ЧЁРНЫХ");
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("ШАХМАТЫ  ·  " + status), width / 2, 12, whiteTurn && running && !paused ? 0xFFFFD75E : 0xFFFFFFFF);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal(ruleLabel(ruleMode) + "  ·  " + (matchMode.equals("TWO_TWO") ? "2v2" : "1v1")), width / 2, 28, 0xFFBBBBBB);
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Срубили белые: " + whiteCaptures.length() + " · Срубили чёрные: " + blackCaptures.length()), width / 2, 39, 0xFFBBBBBB);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Лоток белых: " + whiteCaptures.length() + " · Лоток чёрных: " + blackCaptures.length()), width / 2, 39, 0xFFBBBBBB);
 
         int cell = Math.min(30, Math.min((width - 36) / 8, (height - 122) / 8));
         cell = Math.max(20, cell);

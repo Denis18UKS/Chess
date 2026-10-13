@@ -66,6 +66,34 @@ public final class ChessClientNetwork {
             });
         });
 
+        ClientPlayNetworking.registerGlobalReceiver(ChessNetwork.SPECTATOR_STATE, (client, handler, buf, responseSender) -> {
+            boolean watching = buf.readBoolean();
+            boolean whiteTurn = buf.readBoolean();
+            client.execute(() -> ChessSpectatorHud.update(watching, whiteTurn));
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(ChessNetwork.FADE_TRANSITION, (client, handler, buf, responseSender) -> {
+            int fadeOutTicks = buf.readInt();
+            int holdTicks = buf.readInt();
+            int fadeInTicks = buf.readInt();
+            client.execute(() -> ChessFadeHud.start(fadeOutTicks, holdTicks, fadeInTicks));
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(ChessNetwork.PANEL_MODE_STATE, (client, handler, buf, responseSender) -> {
+            int mode = buf.readInt();
+            boolean threeDimensional = buf.readBoolean();
+            client.execute(() -> {
+                ChessPanelWorldRenderer.setModeIndex(mode);
+                ChessPanelWorldRenderer.setViewModeIndex(threeDimensional);
+            });
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(ChessNetwork.FADE_SETTINGS_STATE, (client, handler, buf, responseSender) -> {
+            int fadeTicks = buf.readInt();
+            int teleportDelayTicks = buf.readInt();
+            client.execute(() -> ChessFadeConfiguratorScreen.receiveSettings(fadeTicks, teleportDelayTicks));
+        });
+
         ClientPlayNetworking.registerGlobalReceiver(ChessNetwork.CLOCK_STATE, (client, handler, buf, responseSender) -> {
             boolean visible = buf.readBoolean();
             boolean ticking = buf.readBoolean();
@@ -116,6 +144,11 @@ public final class ChessClientNetwork {
         var buf = PacketByteBufs.create();
         buf.writeBlockPos(pos);
         ClientPlayNetworking.send(ChessNetwork.MOVE_3D, buf);
+    }
+
+    public static void toggleSpectating() {
+        if (ClientPlayNetworking.canSend(ChessNetwork.SPECTATE_TOGGLE))
+            ClientPlayNetworking.send(ChessNetwork.SPECTATE_TOGGLE, PacketByteBufs.create());
     }
 
     public static void switchDevTeam() {

@@ -2,6 +2,7 @@ package com.chess;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.command.argument.BlockPosArgumentType;
 import net.minecraft.server.command.ServerCommandSource;
@@ -51,6 +52,7 @@ public final class ChessCommands {
                     ctx.getSource().sendFeedback(() -> Text.literal("Chess: начальная расстановка восстановлена."), false);
                     return 1;
                 } catch (IllegalStateException ex) {
+                    if (ex.getMessage() != null && ex.getMessage().startsWith("Недостаточно игроков")) return 0;
                     ctx.getSource().sendError(Text.literal(ex.getMessage()));
                     return 0;
                 }
@@ -61,6 +63,7 @@ public final class ChessCommands {
                     ctx.getSource().sendFeedback(() -> Text.literal("Chess: start"), false);
                     return 1;
                 } catch (IllegalStateException ex) {
+                    if (ex.getMessage() != null && ex.getMessage().startsWith("Недостаточно игроков")) return 0;
                     ctx.getSource().sendError(Text.literal(ex.getMessage()));
                     return 0;
                 }
@@ -96,11 +99,11 @@ public final class ChessCommands {
                 var world = ctx.getSource().getWorld();
                 try {
                     ChessGameManager.setMatchMode(world, ChessGameManager.MatchMode.ONE_VS_BOT);
-                    ChessGameManager.resetBoard(world);
                     ChessGameManager.start(world);
                     ctx.getSource().sendFeedback(() -> Text.literal("Chess: начата партия 1_vs_bot."), false);
                     return 1;
                 } catch (IllegalStateException ex) {
+                    if (ex.getMessage() != null && ex.getMessage().startsWith("Недостаточно игроков")) return 0;
                     ctx.getSource().sendError(Text.literal(ex.getMessage()));
                     return 0;
                 }
@@ -117,12 +120,58 @@ public final class ChessCommands {
                     ChessGameManager.setLobbyDelay(ctx.getSource().getServer(), seconds);
                     return 1;
                 })) )
+            .then(literal("bot").requires(s -> s.hasPermissionLevel(2))
+                .then(literal("difficulty")
+                    .then(literal("easy").executes(ctx -> setBotDifficulty(ctx.getSource(), ChessWorldConfig.BotDifficulty.EASY)))
+                    .then(literal("medium").executes(ctx -> setBotDifficulty(ctx.getSource(), ChessWorldConfig.BotDifficulty.MEDIUM)))
+                    .then(literal("high").executes(ctx -> setBotDifficulty(ctx.getSource(), ChessWorldConfig.BotDifficulty.HIGH)))
+                    .then(literal("professional").executes(ctx -> setBotDifficulty(ctx.getSource(), ChessWorldConfig.BotDifficulty.PROFESSIONAL))))
+                .then(literal("style")
+                    .then(literal("balanced").executes(ctx -> setBotStyle(ctx.getSource(), ChessWorldConfig.BotStyle.BALANCED)))
+                    .then(literal("aggressive").executes(ctx -> setBotStyle(ctx.getSource(), ChessWorldConfig.BotStyle.AGGRESSIVE)))
+                    .then(literal("defensive").executes(ctx -> setBotStyle(ctx.getSource(), ChessWorldConfig.BotStyle.DEFENSIVE)))
+                    .then(literal("positional").executes(ctx -> setBotStyle(ctx.getSource(), ChessWorldConfig.BotStyle.POSITIONAL))))
+                .then(literal("status").executes(ctx -> showBotSettings(ctx.getSource()))))
+            .then(literal("turnhud").requires(s -> s.hasPermissionLevel(2))
+                .then(literal("off").executes(ctx -> setTurnHud(ctx.getSource(), 0)))
+                .then(literal("temporary").executes(ctx -> setTurnHud(ctx.getSource(), 1)))
+                .then(literal("permanent").executes(ctx -> setTurnHud(ctx.getSource(), 2))))
+            .then(literal("zones").requires(s -> s.hasPermissionLevel(2))
+                .then(literal("show").executes(ctx -> setZonesVisible(ctx.getSource(), true)))
+                .then(literal("hide").executes(ctx -> setZonesVisible(ctx.getSource(), false)))
+                .then(literal("toggle").executes(ctx -> {
+                    ChessWorldConfig config = ChessWorldConfig.get(ctx.getSource().getServer());
+                    return setZonesVisible(ctx.getSource(), !config.areTriggerZonesVisible());
+                })))
+            .then(literal("zone").requires(s -> s.hasPermissionLevel(2))
+                .then(literal("pos1").then(argument("pos", BlockPosArgumentType.blockPos()).executes(ctx -> {
+                    BlockPos pos = BlockPosArgumentType.getBlockPos(ctx, "pos");
+                    ChessWorldConfig.get(ctx.getSource().getServer()).saveZoneCorner(ctx.getSource().getWorld(), pos);
+                    ctx.getSource().sendFeedback(() -> Text.literal("Точка 1 сохранена: " + pos.toShortString()
+                        + ". Укажи точку 2 через /chess zone pos2 <pos> <имя>."), false);
+                    return 1;
+                })))
+                .then(literal("pos2").then(argument("pos", BlockPosArgumentType.blockPos())
+                    .then(argument("name", StringArgumentType.word()).executes(ctx ->
+                        defineZone(ctx.getSource(), BlockPosArgumentType.getBlockPos(ctx, "pos"),
+                            StringArgumentType.getString(ctx, "name"), ""))
+                    .then(argument("onEnter", StringArgumentType.greedyString()).executes(ctx ->
+                        defineZone(ctx.getSource(), BlockPosArgumentType.getBlockPos(ctx, "pos"),
+                            StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "onEnter"))))))))
             .then(literal("white").executes(ctx -> joinTeam(ctx.getSource(), "white")))
             .then(literal("black").executes(ctx -> joinTeam(ctx.getSource(), "black")))
+            .then(literal("unselect").executes(ctx -> {
+                ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
+                return ChessGameManager.clearTeamSelection(player) ? 1 : 0;
+            }))
+            .then(literal("spectate").executes(ctx -> {
+                ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
+                return ChessGameManager.toggleSpectating(player) ? 1 : 0;
+            }))
             .then(literal("autoconfig").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
                 ensureTeam(ctx.getSource().getServer().getScoreboard(), "white", Formatting.WHITE);
                 ensureTeam(ctx.getSource().getServer().getScoreboard(), "black", Formatting.DARK_GRAY);
-                ctx.getSource().sendFeedback(() -> Text.literal("Созданы команды white и black. Игроки могут использовать /chess white и /chess black."), false);
+                ctx.getSource().sendFeedback(() -> Text.literal("Созданы команды «Белые» и «Чёрные». Предварительный выбор: /chess white или /chess black."), false);
                 return 1;
             }))
             .then(literal("turn").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
@@ -176,23 +225,117 @@ public final class ChessCommands {
             return 1;
         }));
 
-        dispatcher.register(literal("chessdev").executes(ctx -> {
-            ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
-            if (player.getCommandTags().contains("chess_dev")) {
-                player.getCommandTags().remove("chess_dev");
-                player.sendMessage(Text.literal("Режим разработчика выключен."), false);
-            } else {
-                player.addCommandTag("chess_dev");
-                player.sendMessage(Text.literal("Режим разработчика включён. Кейбинд смены команды активен."), false);
-            }
-            ChessNetwork.sendBoard(player);
-            return 1;
-        }));
+        dispatcher.register(literal("chessdev")
+            .executes(ctx -> {
+                ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
+                if (player.getCommandTags().contains("chess_dev")) {
+                    player.getCommandTags().remove("chess_dev");
+                    player.sendMessage(Text.literal("Режим разработчика выключен."), false);
+                } else {
+                    player.addCommandTag("chess_dev");
+                    player.sendMessage(Text.literal("Режим разработчика включён. Кейбинд смены команды активен."), false);
+                }
+                ChessNetwork.sendBoard(player);
+                return 1;
+            })
+            .then(literal("botpieces").then(argument("pieces", StringArgumentType.greedyString()).executes(ctx -> {
+                ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
+                return ChessGameManager.setBotAllowedPieces(player,
+                    StringArgumentType.getString(ctx, "pieces")) ? 1 : 0;
+            })))
+            .then(literal("promotionstock")
+                .then(argument("side", StringArgumentType.word())
+                    .then(argument("piece", StringArgumentType.word()).executes(ctx -> {
+                        ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
+                        return ChessGameManager.addPromotionStock(player,
+                            StringArgumentType.getString(ctx, "side"),
+                            StringArgumentType.getString(ctx, "piece")) ? 1 : 0;
+                    })))));
 
-        dispatcher.register(literal("chessboard").then(literal("check").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
-            ServerPlayerEntity player = ctx.getSource().getPlayer();
-            return ChessGameManager.checkBoard(ctx.getSource().getWorld(), player) ? 1 : 0;
-        })));
+        dispatcher.register(literal("chessboard")
+            .then(literal("check").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
+                ServerPlayerEntity player = ctx.getSource().getPlayer();
+                return ChessGameManager.checkBoard(ctx.getSource().getWorld(), player) ? 1 : 0;
+            }))
+            .then(literal("auto").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
+                boolean found = ChessGameManager.autoBindExistingBoard(ctx.getSource().getWorld());
+                if (found) ctx.getSource().sendFeedback(() -> Text.literal("Шахматное поле обнаружено и сохранено. Следующие перезапуски больше не потребуют повторной привязки."), false);
+                else ctx.getSource().sendError(Text.literal("Поле не найдено рядом со спавном/игроками. Подойди ближе к 64 клеткам и повтори /chessboard auto, либо привяжи поле один раз."));
+                return found ? 1 : 0;
+            })));
+    }
+
+    private static int setBotDifficulty(ServerCommandSource source, ChessWorldConfig.BotDifficulty difficulty) {
+        ChessWorldConfig config = ChessWorldConfig.get(source.getServer());
+        config.setBotDifficulty(difficulty);
+        source.sendFeedback(() -> Text.literal("Сложность бота: " + botDifficultyLabel(difficulty) + "."), false);
+        return 1;
+    }
+
+    private static int setBotStyle(ServerCommandSource source, ChessWorldConfig.BotStyle style) {
+        ChessWorldConfig config = ChessWorldConfig.get(source.getServer());
+        config.setBotStyle(style);
+        source.sendFeedback(() -> Text.literal("Стиль бота: " + botStyleLabel(style) + "."), false);
+        return 1;
+    }
+
+    private static int showBotSettings(ServerCommandSource source) {
+        ChessWorldConfig config = ChessWorldConfig.get(source.getServer());
+        source.sendFeedback(() -> Text.literal("Бот: " + botDifficultyLabel(config.getBotDifficulty())
+            + " · стиль: " + botStyleLabel(config.getBotStyle())), false);
+        return 1;
+    }
+
+    private static String botDifficultyLabel(ChessWorldConfig.BotDifficulty difficulty) {
+        switch (difficulty) {
+            case EASY: return "лёгкий";
+            case HIGH: return "высокий";
+            case PROFESSIONAL: return "профессиональный";
+            case MEDIUM:
+            default: return "средний";
+        }
+    }
+
+    private static String botStyleLabel(ChessWorldConfig.BotStyle style) {
+        switch (style) {
+            case AGGRESSIVE: return "агрессивный";
+            case DEFENSIVE: return "защитный";
+            case POSITIONAL: return "позиционный";
+            case BALANCED:
+            default: return "сбалансированный";
+        }
+    }
+
+    private static int setTurnHud(ServerCommandSource source, int mode) {
+        ChessWorldConfig.get(source.getServer()).setTurnHudMode(mode);
+        String label = mode == 0 ? "выключен" : mode == 1 ? "временный" : "постоянный";
+        source.sendFeedback(() -> Text.literal("Индикатор хода: " + label + "."), false);
+        return 1;
+    }
+
+    private static int setZonesVisible(ServerCommandSource source, boolean visible) {
+        ChessWorldConfig.get(source.getServer()).setTriggerZonesVisible(visible);
+        source.sendFeedback(() -> Text.literal("Границы триггерных областей " + (visible ? "показаны" : "скрыты") + "."), false);
+        return 1;
+    }
+
+    private static int defineZone(ServerCommandSource source, BlockPos pos, String name, String requestedEnter) {
+        try {
+            ChessWorldConfig config = ChessWorldConfig.get(source.getServer());
+            String enter = requestedEnter == null ? "" : requestedEnter.trim();
+            if (enter.isBlank()) {
+                if ("team_white".equalsIgnoreCase(name) || "white".equalsIgnoreCase(name)) enter = "chess white";
+                else if ("team_black".equalsIgnoreCase(name) || "black".equalsIgnoreCase(name)) enter = "chess black";
+            }
+            config.defineZone(name, source.getWorld(), pos, enter, "");
+            final String finalEnter = enter;
+            source.sendFeedback(() -> Text.literal("Триггерная область «" + name + "» создана между точками 1 и 2. "
+                + (finalEnter.isBlank() ? "Команду при входе можно задать в конфигураторе зон." : "Команда при входе: " + finalEnter)), false);
+            return 1;
+        } catch (IllegalStateException ex) {
+            source.sendError(Text.literal(ex.getMessage()));
+            return 0;
+        }
     }
 
     private static int teleport(ServerCommandSource source, boolean white) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
@@ -202,30 +345,15 @@ public final class ChessCommands {
 
     private static int joinTeam(ServerCommandSource source, String name) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayerEntity player = source.getPlayerOrThrow();
-        ChessGameManager.BoardState state = ChessGameManager.board(source.getWorld());
-        Scoreboard scoreboard = source.getServer().getScoreboard();
-        Team team = ensureTeam(scoreboard, name, name.equals("white") ? Formatting.WHITE : Formatting.DARK_GRAY);
-        if (state.matchMode == ChessGameManager.MatchMode.ONE_VS_BOT && name.equals("black")) {
-            source.sendError(Text.literal("В режиме 1_vs_bot команда black занята компьютерным соперником. Присоединяйся к white."));
-            return 0;
-        }
-        int limit = state.matchMode == ChessGameManager.MatchMode.TWO_TWO ? 2 : 1;
-        boolean alreadyMember = team.getPlayerList().contains(player.getEntityName());
-        if (!alreadyMember && team.getPlayerList().size() >= limit) {
-            source.sendError(Text.literal("Команда " + name + " заполнена для режима " + (limit == 1 ? "1v1" : "2v2") + "."));
-            return 0;
-        }
-        scoreboard.addPlayerToTeam(player.getEntityName(), team);
-        ChessGameManager.giveTeamPieces(player, name.equals("white"));
-        source.sendFeedback(() -> Text.literal("Вы присоединились к команде " + name + "."), false);
-        return 1;
+        return ChessGameManager.selectTeam(player, name) ? 1 : 0;
     }
 
     private static Team ensureTeam(Scoreboard scoreboard, String name, Formatting color) {
         Team team = scoreboard.getTeam(name);
         if (team == null) team = scoreboard.addTeam(name);
-        team.setDisplayName(Text.literal(name));
-        team.setColor(color);
+        Formatting sideColor = name.equals("white") ? Formatting.WHITE : Formatting.DARK_GRAY;
+        team.setDisplayName(Text.literal(name.equals("white") ? "Белые" : "Чёрные").formatted(sideColor));
+        team.setColor(sideColor);
         team.setFriendlyFireAllowed(false);
         return team;
     }
