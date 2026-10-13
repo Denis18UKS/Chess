@@ -67,7 +67,7 @@ public final class ChessGameManager {
     }
 
     public static BoardState board(World world) {
-        return BOARDS.computeIfAbsent(world.getRegistryKey(), key -> {
+        BoardState state = BOARDS.computeIfAbsent(world.getRegistryKey(), key -> {
             BoardState state = new BoardState();
             if (world instanceof ServerWorld serverWorld) {
                 ChessWorldConfig config = ChessWorldConfig.get(serverWorld.getServer());
@@ -95,14 +95,22 @@ public final class ChessGameManager {
             }
             return state;
         });
+        if (world instanceof ServerWorld serverWorld && state.configured && !state.legacyCaptureTraysCleaned) {
+            clearLegacySideCaptureTrays(serverWorld, state);
+            state.legacyCaptureTraysCleaned = true;
+        }
+        return state;
     }
 
     public static void configureBoard(ServerWorld world, BlockPos firstSquare) {
         BoardState state = board(world);
         state.origin = firstSquare.toImmutable();
         state.configured = true;
+        state.legacyCaptureTraysCleaned = false;
         state.pending = null;
         ChessWorldConfig.get(world.getServer()).saveBoardBinding(world, firstSquare);
+        clearLegacySideCaptureTrays(world, state);
+        state.legacyCaptureTraysCleaned = true;
         world.getPlayers().forEach(p -> p.sendMessage(Text.literal(
             "Шахматное поле привязано: " + firstSquare.getX() + " " + firstSquare.getY() + " " + firstSquare.getZ()
         ), false));
@@ -1548,6 +1556,45 @@ public final class ChessGameManager {
         }
     }
 
+    /**
+     * Removes the previous side-by-side capture trays (8x4 checkerboards) from saved worlds.
+     * The current layout puts one 8x2 tray at each end of the main board; leaving the old
+     * side platforms in place makes them look like a second, detached chessboard.
+     */
+    private static void clearLegacySideCaptureTrays(ServerWorld world, BoardState state) {
+        if (!state.configured || state.origin == null) return;
+        // Legacy trays were 4 blocks deep along X and 8 blocks long along Z, with a two-block gap.
+        clearLegacyCaptureTrayRegion(world, state.origin.add(-4, 0, 0), 4, 8);
+        clearLegacyCaptureTrayRegion(world, state.origin.add(10, 0, 0), 4, 8);
+        // Some earlier versions used the same right-side position but the opposite orientation.
+        // It does not overlap the main board, so it is safe to remove when it is a full checkerboard.
+        clearLegacyCaptureTrayRegion(world, state.origin.add(10, 0, 0), 8, 4);
+    }
+
+    private static void clearLegacyCaptureTrayRegion(ServerWorld world, BlockPos corner, int sizeX, int sizeZ) {
+        BlockState first = world.getBlockState(corner);
+        if (!isChessSquare(first)) return;
+        boolean firstWhite = first.isOf(ModBlocks.CHESS_WHITE_SQUARE);
+        // Only erase a complete alternating chess-tile rectangle at the exact legacy location.
+        for (int x = 0; x < sizeX; x++) {
+            for (int z = 0; z < sizeZ; z++) {
+                BlockState tile = world.getBlockState(corner.add(x, 0, z));
+                boolean expectedWhite = ((x + z) & 1) == 0 ? firstWhite : !firstWhite;
+                if (expectedWhite ? !tile.isOf(ModBlocks.CHESS_WHITE_SQUARE)
+                                  : !tile.isOf(ModBlocks.CHESS_BLACK_SQUARE)) return;
+            }
+        }
+        for (int x = 0; x < sizeX; x++) {
+            for (int z = 0; z < sizeZ; z++) {
+                BlockPos tilePos = corner.add(x, 0, z);
+                BlockPos piecePos = tilePos.up();
+                if (ChessPieceType.fromBlock(world.getBlockState(piecePos)) != null)
+                    world.setBlockState(piecePos, Blocks.AIR.getDefaultState(), 3);
+                world.setBlockState(tilePos, Blocks.AIR.getDefaultState(), 3);
+            }
+        }
+    }
+
     public static void autoConfigureCaptures(ServerWorld world) {
         autoConfigureCaptures(world, board(world));
         broadcast(world, "Поле срубленных фигур настроено автоматически.");
@@ -1555,6 +1602,8 @@ public final class ChessGameManager {
 
     private static void autoConfigureCaptures(ServerWorld world, BoardState state) {
         if (!state.configured) return;
+        clearLegacySideCaptureTrays(world, state);
+        state.legacyCaptureTraysCleaned = true;
         // Black pieces start on rows 0-1; white pieces start on rows 6-7.
         // Captured pieces stay in a tray of their own color. The main board spans Z=0..7:
         // white's 8x2 tray starts at Z=10, black's at Z=-4. This leaves two empty blocks
@@ -2621,6 +2670,7 @@ public final class ChessGameManager {
     public static final class BoardState {
         public BlockPos origin = BlockPos.ORIGIN;
         public boolean configured;
+        public boolean legacyCaptureTraysCleaned;
         public boolean running;
         public boolean paused;
         public boolean pausedByDisconnect;

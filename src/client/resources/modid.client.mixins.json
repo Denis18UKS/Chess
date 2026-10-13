@@ -5,7 +5,9 @@
   "client": [
     "HideSurvivalHudMixin",
     "HideFoodIconsMixin",
-    "GlobalFadeOverlayMixin"
+    "GlobalFadeOverlayMixin",
+    "KeyboardFadeLockMixin",
+    "MouseFadeLockMixin"
   ],
   "injectors": {
     "defaultRequire": 1
